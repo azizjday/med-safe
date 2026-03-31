@@ -310,6 +310,91 @@
             background: #232c3e;
             border: 1px solid #3d4a5c;
         }
+        /* --- RÔLES MÉDECIN / INFIRMIER --- */
+        .ordo-card {
+            border: 1px solid #e6e9ef;
+            border-radius: 10px;
+            padding: 14px;
+            background: #fff;
+            transition: background .3s, border .3s;
+        }
+        .ordo-card.urgente { border-left: 4px solid #f59e0b; }
+        .ordo-card.stat { border-left: 4px solid #d94b4b; }
+        .ordo-card.normale { border-left: 4px solid #0B3D91; }
+        .ordo-card.confirmee { border-left: 4px solid #0a6a2a; }
+        .ordo-card.administree { border-left: 4px solid #666; opacity: .8; }
+        
+        .patient-card {
+            border: 1px solid #e6e9ef;
+            border-radius: 10px;
+            padding: 14px;
+            background: #fff;
+            cursor: pointer;
+            transition: background .2s, border .2s;
+        }
+        .patient-card:hover { border-color: #0B3D91; background: #f7fbff; }
+        
+        .status-badge {
+            display: inline-block;
+            padding: 3px 10px;
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: 700;
+        }
+        .status-badge.envoyee { background: #eef5ff; color: #0b3d91; }
+        .status-badge.confirmee { background: #f4fff7; color: #0a6a2a; }
+        .status-badge.administree { background: #f0f0f0; color: #555; }
+        .status-badge.brouillon { background: #fffbeb; color: #92400e; }
+        .status-badge.stat { background: #fff5f5; color: #d94b4b; }
+        .status-badge.urgente { background: #fffbeb; color: #92400e; }
+
+        .ordo-med-tag {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            background: #f0f7ff;
+            border: 1px solid #bcd4f6;
+            border-radius: 8px;
+            font-size: 13px;
+        }
+        .ordo-med-tag .lasa-flag { color: #d94b4b; font-weight: 700; }
+        
+        .constante-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        .constante-item {
+            background: #f7fbff;
+            border: 1px solid #e6f0ff;
+            border-radius: 8px;
+            padding: 10px;
+            text-align: center;
+        }
+        .constante-item .val { font-size: 20px; font-weight: 700; color: #0B3D91; }
+        .constante-item .lbl { font-size: 11px; color: #666; margin-top: 2px; }
+
+        /* Commentaire infirmier */
+        .comment-bubble {
+            background: #f0f7ff;
+            border-left: 3px solid #0B3D91;
+            border-radius: 0 8px 8px 0;
+            padding: 8px 12px;
+            font-size: 13px;
+            margin-top: 8px;
+        }
+        .comment-bubble.inf { border-left-color: #0a6a2a; background: #f4fff7; }
+
+        body[data-theme="dark"] .ordo-card,
+        body[data-theme="dark"] .patient-card { background: #1a2333; border-color: #3d4a5c; }
+        body[data-theme="dark"] .ordo-med-tag { background: #1a2d42; border-color: #3d4a5c; }
+        body[data-theme="dark"] .constante-item { background: #1a2333; border-color: #3d4a5c; }
+        body[data-theme="dark"] .comment-bubble { background: #1a2d42; }
+        body[data-theme="dark"] .comment-bubble.inf { background: #1b4526; }
+        body[data-theme="dark"] .patient-card:hover { background: #1f2e42; }
+
     </style>
 </head>
 <body>
@@ -326,11 +411,12 @@
                 <label for="password" style="margin-top:12px">Mot de passe</label>
                 <input id="password" type="password" required placeholder="Mot de passe" value="12345"/>
                 
-                <!-- Role selector for demo purposes -->
-                <label for="userRole" style="margin-top:12px">Rôle (Démo)</label>
+                <!-- Role selector -->
+                <label for="userRole" style="margin-top:12px">Rôle</label>
                 <select id="userRole" style="width:100%;padding:10px;border-radius:8px;border:1px solid #e6e9ef;margin-bottom:12px">
-                    <option value="user">Utilisateur Standard</option>
-                    <option value="admin">Administrateur</option>
+                    <option value="medecin">🩺 Médecin</option>
+                    <option value="infirmier">💉 Infirmier(e)</option>
+                    <option value="admin">⚙️ Administrateur</option>
                 </select>
                 
                 <div id="login-message" class="lasawarning" style="display:none;margin-top:10px;text-align:center"></div>
@@ -353,8 +439,12 @@
                 <button class="ghost" id="nav-library" onclick="showSection('library')">Bibliothèque</button>
                 <button class="ghost" id="nav-quiz" onclick="showSection('quiz')">Quiz</button>
                 <button class="ghost" id="nav-dashboard" onclick="showSection('dashboard')">Dashboard</button>
-                <button class="ghost admin-only" id="nav-admin" onclick="showSection('admin')" style="display:none">Admin</button>
+                <button class="ghost role-medecin" id="nav-ordonnance" onclick="showSection('ordonnance')" style="display:none">📋 Ordonnances</button>
+                <button class="ghost role-medecin" id="nav-soins" onclick="showSection('soins')" style="display:none">🩹 Soins & Bilans</button>
+                <button class="ghost role-infirmier" id="nav-infirmier" onclick="showSection('infirmier')" style="display:none">💉 Mes Ordonnances</button>
+                <button class="ghost role-admin" id="nav-admin" onclick="showSection('admin')" style="display:none">Admin</button>
                 <button class="ghost" onclick="toggleDarkMode()" title="Mode sombre/clair">🌓</button>
+                <button class="ghost" onclick="handleLogout()" title="Se déconnecter" style="border-color:#d94b4b;color:#d94b4b">🚪 Déconnexion</button>
             </nav>
         </header>
 
@@ -504,6 +594,159 @@
                     </div>
                 </section>
                 
+                <!-- SECTION MÉDECIN : Ordonnances & Dossiers patients -->
+                <section id="ordonnance" class="card" style="display:none">
+                    <div class="section-title">
+                        <div>
+                            <h2 style="margin:0">📋 Espace Médecin</h2>
+                            <div class="small">Rédiger des ordonnances numériques et gérer les dossiers patients</div>
+                        </div>
+                        <button class="btn" onclick="openNewPatient()">+ Nouveau Patient</button>
+                    </div>
+
+                    <!-- Tabs internes -->
+                    <div style="display:flex;gap:8px;margin-top:16px;border-bottom:2px solid #e6e9ef;padding-bottom:0">
+                        <button class="ghost" id="tab-dossiers" onclick="switchMedecinTab('dossiers')" style="border-bottom:2px solid #0B3D91;border-radius:8px 8px 0 0;margin-bottom:-2px">Dossiers Patients</button>
+                        <button class="ghost" id="tab-rediger" onclick="switchMedecinTab('rediger')" style="border-radius:8px 8px 0 0;margin-bottom:-2px">Rédiger Ordonnance</button>
+                        <button class="ghost" id="tab-suivi" onclick="switchMedecinTab('suivi')" style="border-radius:8px 8px 0 0;margin-bottom:-2px">Suivi des Ordonnances</button>
+                    </div>
+
+                    <!-- Tab: Dossiers Patients -->
+                    <div id="medecin-dossiers" style="margin-top:16px">
+                        <div style="display:flex;gap:8px;margin-bottom:12px">
+                            <input type="text" id="patientSearchInput" placeholder="Rechercher un patient (nom, chambre...)" oninput="filterPatients()" style="flex:1"/>
+                        </div>
+                        <div id="patientListContainer" style="display:flex;flex-direction:column;gap:10px;max-height:500px;overflow:auto"></div>
+                    </div>
+
+                    <!-- Tab: Rédiger Ordonnance -->
+                    <div id="medecin-rediger" style="margin-top:16px;display:none">
+                        <div class="columns" style="gap:16px">
+                            <div>
+                                <label>Patient</label>
+                                <select id="ordoPatientSelect" style="width:100%;padding:10px;border-radius:8px;border:1px solid #e6e9ef" onchange="loadPatientAllergies()">
+                                    <option value="">-- Sélectionner un patient --</option>
+                                </select>
+                                <div id="ordoAllergyWarning" style="margin-top:8px"></div>
+
+                                <label style="margin-top:12px">Date de l'ordonnance</label>
+                                <input type="date" id="ordoDate" style="width:100%"/>
+
+                                <label style="margin-top:12px">Priorité</label>
+                                <select id="ordoPriority" style="width:100%;padding:10px;border-radius:8px;border:1px solid #e6e9ef">
+                                    <option value="normale">Normale</option>
+                                    <option value="urgente">Urgente ⚠️</option>
+                                    <option value="stat">STAT 🔴 (Immédiat)</option>
+                                </select>
+
+                                <label style="margin-top:12px">Notes cliniques</label>
+                                <textarea id="ordoNotes" rows="3" placeholder="Diagnostic, observations..."></textarea>
+                            </div>
+
+                            <div>
+                                <label>Médicaments prescrits</label>
+                                <div style="display:flex;gap:8px;margin-bottom:8px">
+                                    <input type="text" id="ordoMedSearch" placeholder="Nom du médicament..." style="flex:1" oninput="searchOrdoMed()" autocomplete="off"/>
+                                    <button class="btn" onclick="addMedToOrdo()">+ Ajouter</button>
+                                </div>
+                                <div id="ordoMedSuggestions" style="background:#fff;border:1px solid #e6e9ef;border-radius:8px;max-height:150px;overflow:auto;display:none"></div>
+                                <div id="ordoLasaWarning" style="margin-bottom:8px"></div>
+
+                                <!-- Liste des médicaments dans l'ordonnance -->
+                                <div id="ordoMedList" style="display:flex;flex-direction:column;gap:8px;min-height:60px;border:1px dashed #cdd5e0;border-radius:8px;padding:10px">
+                                    <span class="muted" id="ordoMedEmpty">Aucun médicament ajouté</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end">
+                            <button class="ghost" onclick="clearOrdonnance()">Réinitialiser</button>
+                            <button class="btn" onclick="saveOrdonnance('brouillon')">Sauvegarder brouillon</button>
+                            <button class="btn" style="background:#0a6a2a" onclick="saveOrdonnance('envoyee')">✅ Envoyer à l'infirmier</button>
+                        </div>
+                        <div id="ordoSaveMsg" style="margin-top:8px"></div>
+                    </div>
+
+                    <!-- Tab: Suivi des Ordonnances -->
+                    <div id="medecin-suivi" style="margin-top:16px;display:none">
+                        <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+                            <select id="suiviStatusFilter" onchange="renderOrdonnancesSuivi()" style="padding:8px;border-radius:8px;border:1px solid #e6e9ef">
+                                <option value="all">Toutes les ordonnances</option>
+                                <option value="envoyee">Envoyées</option>
+                                <option value="confirmee">Confirmées</option>
+                                <option value="administree">Administrées</option>
+                                <option value="brouillon">Brouillons</option>
+                            </select>
+                        </div>
+                        <div id="ordonnancesSuiviList" style="display:flex;flex-direction:column;gap:10px;max-height:500px;overflow:auto"></div>
+                    </div>
+                </section>
+
+                <!-- SECTION INFIRMIER : Réception des ordonnances -->
+                <section id="infirmier" class="card" style="display:none">
+                    <div class="section-title">
+                        <div>
+                            <h2 style="margin:0">💉 Espace Infirmier(e)</h2>
+                            <div class="small">Consulter et exécuter les ordonnances reçues</div>
+                        </div>
+                        <div id="ordoBadgeCount" class="badge" style="font-size:14px;padding:6px 12px;background:#d94b4b;color:#fff">0 en attente</div>
+                        <div id="soinsBadgeCount" class="badge" style="font-size:14px;padding:6px 12px;background:#f59e0b;color:#fff">0 soins</div>
+                    </div>
+
+                    <!-- Tabs internes infirmier -->
+                    <div style="display:flex;gap:8px;margin-top:16px;border-bottom:2px solid #e6e9ef;padding-bottom:0">
+                        <button class="ghost" id="tab-inf-attente" onclick="switchInfirmierTab('attente')" style="border-bottom:2px solid #0B3D91;border-radius:8px 8px 0 0;margin-bottom:-2px">📥 Ordonnances</button>
+                        <button class="ghost" id="tab-inf-soins" onclick="switchInfirmierTab('soins')" style="border-radius:8px 8px 0 0;margin-bottom:-2px">🩹 Soins & Bilans</button>
+                        <button class="ghost" id="tab-inf-patient" onclick="switchInfirmierTab('patient')" style="border-radius:8px 8px 0 0;margin-bottom:-2px">🗂️ Dossiers Patients</button>
+                        <button class="ghost" id="tab-inf-historique" onclick="switchInfirmierTab('historique')" style="border-radius:8px 8px 0 0;margin-bottom:-2px">📜 Historique</button>
+                    </div>
+
+                    <!-- Tab: En attente -->
+                    <div id="infirmier-attente" style="margin-top:16px">
+                        <div id="infOrdoList" style="display:flex;flex-direction:column;gap:12px;max-height:550px;overflow:auto"></div>
+                    </div>
+
+                    <!-- Tab: Soins & Bilans infirmier -->
+                    <div id="infirmier-soins" style="margin-top:16px;display:none">
+                        <div id="infSoinsList" style="display:flex;flex-direction:column;gap:12px;max-height:550px;overflow:auto"></div>
+                    </div>
+
+                    <!-- Tab: Dossiers Patients (vue infirmier) -->
+                    <div id="infirmier-patient" style="margin-top:16px;display:none">
+                        <input type="text" id="infPatientSearch" placeholder="Rechercher un patient..." oninput="filterInfPatients()" style="margin-bottom:12px;width:100%"/>
+                        <div id="infPatientList" style="display:flex;flex-direction:column;gap:10px;max-height:500px;overflow:auto"></div>
+                    </div>
+
+                    <!-- Tab: Historique -->
+                    <div id="infirmier-historique" style="margin-top:16px;display:none">
+                        <div id="infHistoriqueList" style="display:flex;flex-direction:column;gap:10px;max-height:500px;overflow:auto"></div>
+                    </div>
+                </section>
+
+                <!-- SECTION MÉDECIN : Soins & Bilans -->
+                <section id="soins" class="card" style="display:none">
+                    <div class="section-title">
+                        <div>
+                            <h2 style="margin:0">🩹 Soins & Bilans</h2>
+                            <div class="small">Prescrire des bilans biologiques, soins infirmiers et actes techniques</div>
+                        </div>
+                    </div>
+                    <div style="display:flex;gap:8px;margin-top:16px;border-bottom:2px solid #e6e9ef;padding-bottom:0">
+                        <button class="ghost" id="tab-soins-prescrire" onclick="switchSoinsTab('prescrire')" style="border-bottom:2px solid #0B3D91;border-radius:8px 8px 0 0;margin-bottom:-2px;font-weight:700">Prescrire</button>
+                        <button class="ghost" id="tab-soins-suivi" onclick="switchSoinsTab('suivi')" style="border-radius:8px 8px 0 0;margin-bottom:-2px">Suivi des prescriptions</button>
+                    </div>
+                    <div id="soins-prescrire" style="margin-top:18px"></div>
+                    <div id="soins-suivi" style="margin-top:18px;display:none">
+                        <select id="soinsSuiviFilter" onchange="renderSoinsSuivi()" style="padding:8px;border-radius:8px;border:1px solid #e6e9ef;margin-bottom:12px">
+                            <option value="all">Toutes</option>
+                            <option value="envoyee">Envoyées</option>
+                            <option value="confirmee">Confirmées</option>
+                            <option value="realisee">Réalisées</option>
+                        </select>
+                        <div id="soinsSuiviList" style="display:flex;flex-direction:column;gap:10px;max-height:500px;overflow:auto"></div>
+                    </div>
+                </section>
+
                 <!-- New Admin Section -->
                 <section id="admin" class="card" style="display:none">
                     <h3>Panel d'Administration</h3>
@@ -558,7 +801,7 @@
                         <li>Utilisez la section <strong>Accueil</strong> pour vérifier un médicament et identifier les LASA potentiels.</li>
                         <li>Utilisez la <strong>Vérif.</strong> pour comparer deux produits avant l'administration.</li>
                         <li>Utilisez la <strong>Bibliothèque</strong> pour parcourir toute la liste de vigilance.</li>
-                        <li><strong>Login de test :</strong> <span style="font-weight:700;background:#f0f3f8;padding:2px 4px;border-radius:4px">medsafe</span> / <span style="font-weight:700;background:#f0f3f8;padding:2px 4px;border-radius:4px">12345</span></li>
+                        <li><strong>Login de test :</strong> <span style="font-weight:700;background:#f0f3f8;padding:2px 4px;border-radius:4px">medsafe</span> / <span style="font-weight:700;background:#f0f3f8;padding:2px 4px;border-radius:4px">12345</span> — choisir rôle : 🩺 Médecin, 💉 Infirmier(e) ou ⚙️ Admin</li>
                     </ul>
                 </div>
                 
@@ -1737,26 +1980,50 @@ function handleLogin(e) {
         updateUIForRole(role);
         initApp();
         
-        showNotification(`Bienvenue, ${user} (${role})`, 'success');
+        const roleLabels = { medecin: '🩺 Médecin', infirmier: '💉 Infirmier(e)', admin: '⚙️ Admin' };
+        showNotification(`Bienvenue, ${user} — ${roleLabels[role] || role}`, 'success');
     } else {
         msgEl.innerText = 'Nom d\'utilisateur ou mot de passe incorrect. (Indice: medsafe / 12345)';
         msgEl.style.display = 'block';
     }
 }
 
-// Update UI based on user role
+// Déconnexion
+function handleLogout() {
+    currentUser = null;
+    localStorage.removeItem('currentUser');
+    document.getElementById('main-content').classList.remove('active');
+    document.getElementById('login-container').classList.remove('hidden');
+    document.getElementById('username').value = 'medsafe';
+    document.getElementById('password').value = '12345';
+    document.getElementById('login-message').style.display = 'none';
+    showNotification('Déconnecté avec succès', 'info');
+}
 function updateUIForRole(role) {
     const roleBadge = document.getElementById('userRoleBadge');
-    const adminElements = document.querySelectorAll('.admin-only');
     
+    // Reset all role-specific elements
+    document.querySelectorAll('.admin-only').forEach(el => el.style.display = 'none');
+    document.querySelectorAll('.role-medecin').forEach(el => el.style.display = 'none');
+    document.querySelectorAll('.role-infirmier').forEach(el => el.style.display = 'none');
+    document.querySelectorAll('.role-admin').forEach(el => el.style.display = 'none');
+    document.body.classList.remove('user-admin', 'user-medecin', 'user-infirmier');
+
     if (role === 'admin') {
         document.body.classList.add('user-admin');
-        roleBadge.textContent = 'Administrateur';
-        adminElements.forEach(el => el.style.display = 'block');
+        roleBadge.textContent = '⚙️ Admin';
+        document.querySelectorAll('.admin-only').forEach(el => el.style.display = 'block');
+        document.querySelectorAll('.role-admin').forEach(el => el.style.display = 'inline-block');
+    } else if (role === 'medecin') {
+        document.body.classList.add('user-medecin');
+        roleBadge.textContent = '🩺 Médecin';
+        document.querySelectorAll('.role-medecin').forEach(el => el.style.display = 'inline-block');
+    } else if (role === 'infirmier') {
+        document.body.classList.add('user-infirmier');
+        roleBadge.textContent = '💉 Infirmier(e)';
+        document.querySelectorAll('.role-infirmier').forEach(el => el.style.display = 'inline-block');
     } else {
-        document.body.classList.remove('user-admin');
         roleBadge.textContent = 'Utilisateur';
-        adminElements.forEach(el => el.style.display = 'none');
     }
 }
 
@@ -1998,7 +2265,15 @@ function initApp() {
     renderLibrary();
     renderDashboard();
     renderAdminPanel();
-    showSection('home');
+    
+    // Route to default section based on role
+    if (currentUser && currentUser.role === 'medecin') {
+        showSection('ordonnance');
+    } else if (currentUser && currentUser.role === 'infirmier') {
+        showSection('infirmier');
+    } else {
+        showSection('home');
+    }
     
     // Raccourci clavier pour la recherche
     document.addEventListener('keydown', (e) => {
@@ -2022,24 +2297,28 @@ function initApp() {
 
 // Navigation entre sections
 function showSection(id) {
-    // Masquer toutes les sections
     document.querySelectorAll('#main-section > section').forEach(section => {
         section.style.display = 'none';
     });
-    
-    // Afficher la section sélectionnée
-    document.getElementById(id).style.display = 'block';
-    
-    // Mettre à jour la navigation
-    document.querySelectorAll('nav button').forEach(btn => {
-        if (btn.id === 'nav-' + id) {
-            btn.className = 'btn';
-        } else if (btn.id && btn.id.startsWith('nav-')) {
-            btn.className = 'ghost';
-        }
+
+    const target = document.getElementById(id);
+    if (target) target.style.display = 'block';
+
+    // Mettre à jour la navigation sans écraser les classes de rôle
+    document.querySelectorAll('nav button[id^="nav-"]').forEach(btn => {
+        const isActive = btn.id === 'nav-' + id;
+        // Garder les classes rôle existantes
+        const hasRoleMedecin = btn.classList.contains('role-medecin');
+        const hasRoleInfirmier = btn.classList.contains('role-infirmier');
+        const hasRoleAdmin = btn.classList.contains('role-admin');
+        const hasAdminOnly = btn.classList.contains('admin-only');
+        btn.className = isActive ? 'btn' : 'ghost';
+        if (hasRoleMedecin) btn.classList.add('role-medecin');
+        if (hasRoleInfirmier) btn.classList.add('role-infirmier');
+        if (hasRoleAdmin) btn.classList.add('role-admin');
+        if (hasAdminOnly) btn.classList.add('admin-only');
     });
-    
-    // Actions spécifiques à certaines sections
+
     if (id === 'quiz') {
         renderQuiz();
     } else if (id === 'library') {
@@ -2048,6 +2327,20 @@ function showSection(id) {
         renderDashboard();
     } else if (id === 'admin') {
         renderAdminPanel();
+    } else if (id === 'ordonnance') {
+        renderPatientList();
+        renderOrdonnancesSuivi();
+        populatePatientSelect();
+        switchMedecinTab('dossiers');
+    } else if (id === 'infirmier') {
+        renderInfirmierOrdonnances();
+        renderInfPatientList();
+        renderInfHistorique();
+        switchInfirmierTab('attente');
+    } else if (id === 'soins') {
+        renderSoinsPrescrireUI();
+        renderSoinsSuivi();
+        switchSoinsTab('prescrire');
     }
 }
 
@@ -2935,19 +3228,1081 @@ function refreshFromAPI() {
     });
 }
 
-// Initialisation au chargement
+// ===========================================
+// SYSTÈME PATIENTS, ORDONNANCES, MÉDECIN/INFIRMIER
+// ===========================================
+
+// ---- Données ----
+let PATIENTS = JSON.parse(localStorage.getItem('vigi_patients') || '[]');
+if (PATIENTS.length === 0) {
+    // Données de démonstration
+    PATIENTS = [
+        { id: 1, nom: 'Ben Ali', prenom: 'Ahmed', age: 58, chambre: 'A-204', groupe: 'B+', allergies: ['Pénicilline'], antecedents: ['HTA', 'Diabète type 2'], constantes: { tension: '145/90', pouls: '78', temp: '37.2', spo2: '97', poids: '82' }, ordonnances: [] },
+        { id: 2, nom: 'Trabelsi', prenom: 'Fatma', age: 34, chambre: 'B-112', groupe: 'A+', allergies: [], antecedents: ['Asthme'], constantes: { tension: '120/75', pouls: '72', temp: '36.8', spo2: '99', poids: '61' }, ordonnances: [] },
+        { id: 3, nom: 'Chaabane', prenom: 'Mohamed', age: 72, chambre: 'C-301', groupe: 'O-', allergies: ['Sulfamides', 'Ibuprofène'], antecedents: ['Insuffisance cardiaque', 'ACFA'], constantes: { tension: '130/80', pouls: '88', temp: '37.5', spo2: '95', poids: '74' }, ordonnances: [] },
+    ];
+    localStorage.setItem('vigi_patients', JSON.stringify(PATIENTS));
+}
+
+let ORDONNANCES = JSON.parse(localStorage.getItem('vigi_ordonnances') || '[]');
+let ordoMedItems = []; // médicaments en cours d'ajout dans l'ordo
+let selectedOrdoMed = null;
+
+function savePatients() { localStorage.setItem('vigi_patients', JSON.stringify(PATIENTS)); }
+function saveOrdonnances() { localStorage.setItem('vigi_ordonnances', JSON.stringify(ORDONNANCES)); }
+
+// ---- MÉDECIN TABS ----
+function switchMedecinTab(tab) {
+    ['dossiers', 'rediger', 'suivi'].forEach(t => {
+        document.getElementById('medecin-' + t).style.display = t === tab ? 'block' : 'none';
+        const btn = document.getElementById('tab-' + t);
+        btn.style.borderBottom = t === tab ? '2px solid #0B3D91' : 'none';
+        btn.style.fontWeight = t === tab ? '700' : '500';
+    });
+    if (tab === 'rediger') populatePatientSelect();
+    if (tab === 'suivi') renderOrdonnancesSuivi();
+    if (tab === 'dossiers') renderPatientList();
+}
+
+// ---- INFIRMIER TABS ----
+function switchInfirmierTab(tab) {
+    ['attente', 'soins', 'patient', 'historique'].forEach(t => {
+        const el = document.getElementById('infirmier-' + t);
+        if (el) el.style.display = t === tab ? 'block' : 'none';
+        const btn = document.getElementById('tab-inf-' + t);
+        if (btn) {
+            btn.style.borderBottom = t === tab ? '2px solid #0B3D91' : 'none';
+            btn.style.fontWeight = t === tab ? '700' : '500';
+        }
+    });
+    if (tab === 'soins') renderInfirmierSoins();
+}
+
+// ---- PATIENT: CRUD ----
+function openNewPatient() {
+    const html = `
+        <div>
+            <h3>➕ Nouveau Dossier Patient</h3>
+            <div class="columns">
+                <div>
+                    <label class="small">Nom</label>
+                    <input type="text" id="pNom" required placeholder="Nom de famille"/>
+                    <label class="small" style="margin-top:8px">Prénom</label>
+                    <input type="text" id="pPrenom" required placeholder="Prénom"/>
+                    <label class="small" style="margin-top:8px">Âge</label>
+                    <input type="number" id="pAge" min="0" max="130" placeholder="Âge"/>
+                    <label class="small" style="margin-top:8px">Chambre</label>
+                    <input type="text" id="pChambre" placeholder="Ex: A-204"/>
+                    <label class="small" style="margin-top:8px">Groupe sanguin</label>
+                    <select id="pGroupe" style="width:100%;padding:8px;border-radius:8px;border:1px solid #e6e9ef">
+                        <option>A+</option><option>A-</option><option>B+</option><option>B-</option>
+                        <option>AB+</option><option>AB-</option><option>O+</option><option>O-</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="small">Allergies (séparées par des virgules)</label>
+                    <input type="text" id="pAllergies" placeholder="Ex: Pénicilline, Ibuprofène"/>
+                    <label class="small" style="margin-top:8px">Antécédents médicaux</label>
+                    <textarea id="pAntecedents" rows="3" placeholder="Ex: HTA, Diabète type 2, Asthme..."></textarea>
+                    <label class="small" style="margin-top:8px">Constantes initiales</label>
+                    <div class="constante-grid" style="grid-template-columns:1fr 1fr">
+                        <div><label class="small">Tension (mmHg)</label><input type="text" id="pTension" placeholder="120/80"/></div>
+                        <div><label class="small">Pouls (bpm)</label><input type="number" id="pPouls" placeholder="72"/></div>
+                        <div><label class="small">Temp (°C)</label><input type="number" id="pTemp" step="0.1" placeholder="37.0"/></div>
+                        <div><label class="small">SpO₂ (%)</label><input type="number" id="pSpo2" placeholder="98"/></div>
+                        <div><label class="small">Poids (kg)</label><input type="number" id="pPoids" placeholder="70"/></div>
+                    </div>
+                </div>
+            </div>
+            <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:20px">
+                <button class="ghost" onclick="closeOverlay()">Annuler</button>
+                <button class="btn" onclick="createPatient()">Créer le dossier</button>
+            </div>
+        </div>`;
+    showOverlay(html);
+}
+
+function createPatient() {
+    const nom = document.getElementById('pNom').value.trim();
+    const prenom = document.getElementById('pPrenom').value.trim();
+    if (!nom || !prenom) { showNotification('Nom et prénom obligatoires', 'warning'); return; }
+    const pat = {
+        id: Date.now(),
+        nom, prenom,
+        age: parseInt(document.getElementById('pAge').value) || 0,
+        chambre: document.getElementById('pChambre').value.trim(),
+        groupe: document.getElementById('pGroupe').value,
+        allergies: document.getElementById('pAllergies').value.split(',').map(a => a.trim()).filter(Boolean),
+        antecedents: document.getElementById('pAntecedents').value.split(',').map(a => a.trim()).filter(Boolean),
+        constantes: {
+            tension: document.getElementById('pTension').value,
+            pouls: document.getElementById('pPouls').value,
+            temp: document.getElementById('pTemp').value,
+            spo2: document.getElementById('pSpo2').value,
+            poids: document.getElementById('pPoids').value,
+        },
+        ordonnances: [],
+        createdAt: new Date().toISOString()
+    };
+    PATIENTS.push(pat);
+    savePatients();
+    closeOverlay();
+    showNotification(`Dossier de ${prenom} ${nom} créé`, 'success');
+    renderPatientList();
+    populatePatientSelect();
+}
+
+function openPatientDetail(id) {
+    const p = PATIENTS.find(x => x.id === id);
+    if (!p) return;
+    const patOrdo = ORDONNANCES.filter(o => o.patientId === id).slice(-3).reverse();
+    const allergyHtml = p.allergies.length
+        ? `<span class="lasawarning" style="padding:4px 8px;display:inline-block;margin-top:4px">⚠️ Allergies: ${p.allergies.join(', ')}</span>`
+        : '<span class="ok" style="padding:4px 8px;display:inline-block;margin-top:4px">✓ Aucune allergie connue</span>';
+
+    const html = `
+        <div>
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">
+                <div>
+                    <h3 style="margin:0">${p.prenom} ${p.nom}</h3>
+                    <div class="small">${p.age} ans · Chambre ${p.chambre || 'N/A'} · Groupe ${p.groupe}</div>
+                    ${allergyHtml}
+                </div>
+                ${currentUser && currentUser.role === 'medecin' ? `<button class="btn" onclick="closeOverlay();switchMedecinTab('rediger');document.getElementById('ordoPatientSelect').value='${id}';loadPatientAllergies()">Nouvelle ordonnance</button>` : ''}
+            </div>
+
+            <div style="margin-top:16px">
+                <strong>Antécédents:</strong>
+                <p class="small">${p.antecedents.length ? p.antecedents.join(', ') : 'Aucun antécédent renseigné'}</p>
+            </div>
+
+            <div style="margin-top:12px">
+                <strong>Dernières constantes:</strong>
+                <div class="constante-grid">
+                    <div class="constante-item"><div class="val">${p.constantes.tension || '—'}</div><div class="lbl">Tension mmHg</div></div>
+                    <div class="constante-item"><div class="val">${p.constantes.pouls || '—'}</div><div class="lbl">Pouls bpm</div></div>
+                    <div class="constante-item"><div class="val">${p.constantes.temp || '—'}°C</div><div class="lbl">Température</div></div>
+                    <div class="constante-item"><div class="val">${p.constantes.spo2 || '—'}%</div><div class="lbl">SpO₂</div></div>
+                    <div class="constante-item"><div class="val">${p.constantes.poids || '—'} kg</div><div class="lbl">Poids</div></div>
+                </div>
+            </div>
+
+            <div style="margin-top:16px">
+                <strong>Dernières ordonnances (3):</strong>
+                ${patOrdo.length === 0 ? '<p class="small muted">Aucune ordonnance</p>' : patOrdo.map(o => `
+                    <div style="padding:8px;border:1px solid #e6e9ef;border-radius:8px;margin-top:8px">
+                        <div style="display:flex;justify-content:space-between">
+                            <span class="small">${new Date(o.date).toLocaleDateString('fr-FR')}</span>
+                            <span class="status-badge ${o.statut}">${o.statut}</span>
+                        </div>
+                        <div class="small" style="margin-top:4px">${o.medicaments.map(m => m.nom).join(', ')}</div>
+                    </div>`).join('')}
+            </div>
+
+            <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:20px">
+                <button class="ghost" onclick="closeOverlay()">Fermer</button>
+                ${currentUser && currentUser.role === 'medecin' ? `<button class="btn" onclick="openEditPatientConstantes(${id});closeOverlay()">Màj constantes</button>` : ''}
+            </div>
+        </div>`;
+    showOverlay(html);
+}
+
+function openEditPatientConstantes(id) {
+    const p = PATIENTS.find(x => x.id === id);
+    if (!p) return;
+    const html = `
+        <div>
+            <h3>Mise à jour des constantes — ${p.prenom} ${p.nom}</h3>
+            <div class="constante-grid" style="grid-template-columns:1fr 1fr">
+                <div><label class="small">Tension (mmHg)</label><input type="text" id="cTension" value="${p.constantes.tension||''}"/></div>
+                <div><label class="small">Pouls (bpm)</label><input type="number" id="cPouls" value="${p.constantes.pouls||''}"/></div>
+                <div><label class="small">Temp (°C)</label><input type="number" id="cTemp" step="0.1" value="${p.constantes.temp||''}"/></div>
+                <div><label class="small">SpO₂ (%)</label><input type="number" id="cSpo2" value="${p.constantes.spo2||''}"/></div>
+                <div><label class="small">Poids (kg)</label><input type="number" id="cPoids" value="${p.constantes.poids||''}"/></div>
+            </div>
+            <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:20px">
+                <button class="ghost" onclick="closeOverlay()">Annuler</button>
+                <button class="btn" onclick="saveConstantes(${id})">Enregistrer</button>
+            </div>
+        </div>`;
+    showOverlay(html);
+}
+
+function saveConstantes(id) {
+    const p = PATIENTS.find(x => x.id === id);
+    if (!p) return;
+    p.constantes = {
+        tension: document.getElementById('cTension').value,
+        pouls: document.getElementById('cPouls').value,
+        temp: document.getElementById('cTemp').value,
+        spo2: document.getElementById('cSpo2').value,
+        poids: document.getElementById('cPoids').value,
+    };
+    savePatients();
+    showNotification('Constantes mises à jour', 'success');
+    closeOverlay();
+    renderPatientList();
+}
+
+function renderPatientList() {
+    const q = (document.getElementById('patientSearchInput') || {value:''}).value.toLowerCase();
+    const container = document.getElementById('patientListContainer');
+    if (!container) return;
+    const filtered = PATIENTS.filter(p =>
+        `${p.nom} ${p.prenom} ${p.chambre}`.toLowerCase().includes(q));
+    if (filtered.length === 0) {
+        container.innerHTML = '<div class="muted small" style="text-align:center;padding:20px">Aucun patient trouvé. Créez un nouveau dossier.</div>';
+        return;
+    }
+    container.innerHTML = filtered.map(p => {
+        const allergyWarn = p.allergies.length ? `<span style="color:#d94b4b;font-size:12px">⚠️ ${p.allergies.join(', ')}</span>` : '';
+        const nbOrdo = ORDONNANCES.filter(o => o.patientId === p.id).length;
+        return `
+        <div class="patient-card" onclick="openPatientDetail(${p.id})">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+                <div>
+                    <div style="font-weight:700;font-size:15px">${p.prenom} ${p.nom} <span class="small muted">· ${p.age} ans · Chambre ${p.chambre||'—'}</span></div>
+                    <div class="small" style="margin-top:2px">Groupe ${p.groupe} · ${p.antecedents.slice(0,2).join(', ')||'Aucun antécédent'}</div>
+                    ${allergyWarn}
+                </div>
+                <div style="text-align:right">
+                    <span class="badge">${nbOrdo} ordonnance${nbOrdo !== 1 ? 's' : ''}</span>
+                    <div class="small muted" style="margin-top:4px">SpO₂ ${p.constantes.spo2||'—'}%</div>
+                </div>
+            </div>
+        </div>`;
+    }).join('');
+}
+
+function filterPatients() { renderPatientList(); }
+function filterInfPatients() { renderInfPatientList(); }
+
+// ---- ORDONNANCE: RÉDIGER ----
+function populatePatientSelect() {
+    const sel = document.getElementById('ordoPatientSelect');
+    if (!sel) return;
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">-- Sélectionner un patient --</option>' +
+        PATIENTS.map(p => `<option value="${p.id}">${p.prenom} ${p.nom} — Ch. ${p.chambre||'—'}</option>`).join('');
+    if (cur) sel.value = cur;
+    // Set today as default date
+    const dateInput = document.getElementById('ordoDate');
+    if (dateInput && !dateInput.value) dateInput.value = new Date().toISOString().split('T')[0];
+}
+
+function loadPatientAllergies() {
+    const id = parseInt(document.getElementById('ordoPatientSelect').value);
+    const warn = document.getElementById('ordoAllergyWarning');
+    if (!id || !warn) return;
+    const p = PATIENTS.find(x => x.id === id);
+    if (!p) { warn.innerHTML = ''; return; }
+    if (p.allergies.length) {
+        warn.innerHTML = `<div class="lasawarning">⚠️ Allergies connues: <strong>${p.allergies.join(', ')}</strong></div>`;
+    } else {
+        warn.innerHTML = `<div class="ok">✓ Aucune allergie connue</div>`;
+    }
+    checkOrdoLasaWarning();
+}
+
+function searchOrdoMed() {
+    const q = document.getElementById('ordoMedSearch').value.trim().toLowerCase();
+    const suggestions = document.getElementById('ordoMedSuggestions');
+    if (!q || q.length < 2) { suggestions.style.display = 'none'; return; }
+    const matches = MEDS.filter(m =>
+        m.name.toLowerCase().includes(q) || m.brand.toLowerCase().includes(q) || m.active.toLowerCase().includes(q)
+    ).slice(0, 8);
+    if (!matches.length) { suggestions.style.display = 'none'; return; }
+    suggestions.style.display = 'block';
+    suggestions.innerHTML = matches.map(m => `
+        <div onclick="selectOrdoMed(${m.id})" style="padding:8px 12px;cursor:pointer;border-bottom:1px solid #f0f3f8;display:flex;align-items:center;gap:8px" onmouseover="this.style.background='#f7fbff'" onmouseout="this.style.background=''">
+            <span style="flex:1"><strong>${m.name}</strong> <span class="small">(${m.brand})</span></span>
+            ${m.risk === 'high' ? '<span style="color:#d94b4b;font-size:12px">⚠️ Haut Risque</span>' : ''}
+        </div>`).join('');
+}
+
+function selectOrdoMed(id) {
+    const m = MEDS.find(x => x.id === id);
+    if (!m) return;
+    selectedOrdoMed = m;
+    document.getElementById('ordoMedSearch').value = m.name;
+    document.getElementById('ordoMedSuggestions').style.display = 'none';
+    checkOrdoLasaWarning();
+}
+
+function checkOrdoLasaWarning() {
+    const warn = document.getElementById('ordoLasaWarning');
+    if (!warn) return;
+    if (!selectedOrdoMed) { warn.innerHTML = ''; return; }
+    const m = selectedOrdoMed;
+    // Check against current ordo meds
+    const conflicts = ordoMedItems.filter(item =>
+        item.aliases && item.aliases.includes(m.name) || m.aliases && m.aliases.includes(item.nom));
+    // Check allergies
+    const patId = parseInt((document.getElementById('ordoPatientSelect') || {value:0}).value);
+    const patient = PATIENTS.find(x => x.id === patId);
+    let allergyConflict = false;
+    if (patient && patient.allergies.length) {
+        allergyConflict = patient.allergies.some(a =>
+            m.name.toLowerCase().includes(a.toLowerCase()) || m.active.toLowerCase().includes(a.toLowerCase()));
+    }
+    let html = '';
+    if (allergyConflict) html += `<div class="lasawarning">🚫 ALLERGIE DÉTECTÉE: Le patient est allergique à un composant de ${m.name}!</div>`;
+    if (m.risk === 'high') html += `<div class="lasawarning">⚠️ Médicament Haut Risque — Double vérification requise</div>`;
+    if (conflicts.length) html += `<div class="lasawarning">🛑 Risque LASA avec: ${conflicts.map(c=>c.nom).join(', ')}</div>`;
+    if (!html) html = `<div class="ok">✓ ${m.name} — Aucun conflit détecté</div>`;
+    warn.innerHTML = html;
+}
+
+function addMedToOrdo() {
+    if (!selectedOrdoMed) {
+        const q = document.getElementById('ordoMedSearch').value.trim();
+        if (!q) { showNotification('Sélectionnez un médicament', 'warning'); return; }
+        selectedOrdoMed = { id: Date.now(), name: q, brand: '', active: '', risk: 'unknown', aliases: [] };
+    }
+    const item = {
+        id: selectedOrdoMed.id,
+        nom: selectedOrdoMed.name,
+        marque: selectedOrdoMed.brand,
+        actif: selectedOrdoMed.active,
+        risk: selectedOrdoMed.risk,
+        aliases: selectedOrdoMed.aliases || [],
+        posologie: '',
+        voie: selectedOrdoMed.route || '',
+        duree: '',
+    };
+    ordoMedItems.push(item);
+    selectedOrdoMed = null;
+    document.getElementById('ordoMedSearch').value = '';
+    document.getElementById('ordoLasaWarning').innerHTML = '';
+    renderOrdoMedList();
+}
+
+function removeOrdoMed(index) {
+    ordoMedItems.splice(index, 1);
+    renderOrdoMedList();
+}
+
+function renderOrdoMedList() {
+    const container = document.getElementById('ordoMedList');
+    if (!container) return;
+    if (ordoMedItems.length === 0) {
+        container.innerHTML = '<span class="muted" id="ordoMedEmpty">Aucun médicament ajouté</span>';
+        return;
+    }
+    container.innerHTML = ordoMedItems.map((item, i) => `
+        <div class="ordo-med-tag">
+            <div style="flex:1">
+                <div style="font-weight:700">${item.nom} <span class="small">${item.marque ? '('+item.marque+')' : ''}</span>
+                    ${item.risk === 'high' ? '<span class="lasa-flag">⚠️</span>' : ''}
+                </div>
+                <div style="display:flex;gap:8px;margin-top:4px;flex-wrap:wrap">
+                    <input type="text" placeholder="Posologie (ex: 1g)" value="${item.posologie}" oninput="ordoMedItems[${i}].posologie=this.value" style="width:120px;padding:4px 8px;border-radius:6px;border:1px solid #e6e9ef;font-size:12px"/>
+                    <input type="text" placeholder="Voie (PO/IV/IM)" value="${item.voie}" oninput="ordoMedItems[${i}].voie=this.value" style="width:110px;padding:4px 8px;border-radius:6px;border:1px solid #e6e9ef;font-size:12px"/>
+                    <input type="text" placeholder="Durée (ex: 7j)" value="${item.duree}" oninput="ordoMedItems[${i}].duree=this.value" style="width:90px;padding:4px 8px;border-radius:6px;border:1px solid #e6e9ef;font-size:12px"/>
+                </div>
+            </div>
+            <button onclick="removeOrdoMed(${i})" style="background:none;border:none;cursor:pointer;color:#d94b4b;font-size:18px" title="Supprimer">✕</button>
+        </div>`).join('');
+}
+
+function clearOrdonnance() {
+    ordoMedItems = [];
+    selectedOrdoMed = null;
+    document.getElementById('ordoMedSearch').value = '';
+    document.getElementById('ordoMedList').innerHTML = '<span class="muted" id="ordoMedEmpty">Aucun médicament ajouté</span>';
+    document.getElementById('ordoLasaWarning').innerHTML = '';
+    document.getElementById('ordoAllergyWarning').innerHTML = '';
+    document.getElementById('ordoNotes').value = '';
+    document.getElementById('ordoSaveMsg').innerHTML = '';
+    document.getElementById('ordoPatientSelect').value = '';
+    document.getElementById('ordoPriority').value = 'normale';
+}
+
+function saveOrdonnance(statut) {
+    const patId = parseInt(document.getElementById('ordoPatientSelect').value);
+    if (!patId) { showNotification('Sélectionnez un patient', 'warning'); return; }
+    if (ordoMedItems.length === 0) { showNotification('Ajoutez au moins un médicament', 'warning'); return; }
+    const patient = PATIENTS.find(x => x.id === patId);
+    const ordo = {
+        id: Date.now(),
+        patientId: patId,
+        patientNom: patient ? `${patient.prenom} ${patient.nom}` : 'Inconnu',
+        patientChambre: patient ? patient.chambre : '',
+        medecin: currentUser ? currentUser.username : 'Médecin',
+        date: document.getElementById('ordoDate').value || new Date().toISOString(),
+        priorite: document.getElementById('ordoPriority').value,
+        notes: document.getElementById('ordoNotes').value,
+        medicaments: ordoMedItems.map(m => ({...m})),
+        statut: statut,
+        commentairesInfirmier: [],
+        createdAt: new Date().toISOString(),
+    };
+    ORDONNANCES.unshift(ordo);
+    saveOrdonnances();
+    const msg = statut === 'envoyee' ? '✅ Ordonnance envoyée à l\'infirmier' : '💾 Brouillon sauvegardé';
+    document.getElementById('ordoSaveMsg').innerHTML = `<div class="ok">${msg}</div>`;
+    showNotification(msg, 'success');
+    clearOrdonnance();
+    setTimeout(() => { if (document.getElementById('ordoSaveMsg')) document.getElementById('ordoSaveMsg').innerHTML = ''; }, 3000);
+    renderOrdonnancesSuivi();
+}
+
+// ---- MÉDECIN: SUIVI ----
+function renderOrdonnancesSuivi() {
+    const container = document.getElementById('ordonnancesSuiviList');
+    if (!container) return;
+    const filterStatus = (document.getElementById('suiviStatusFilter') || {value:'all'}).value;
+    let list = ORDONNANCES;
+    if (filterStatus !== 'all') list = list.filter(o => o.statut === filterStatus);
+    if (list.length === 0) {
+        container.innerHTML = '<div class="muted small" style="padding:20px;text-align:center">Aucune ordonnance trouvée</div>';
+        return;
+    }
+    container.innerHTML = list.map(o => `
+        <div class="ordo-card ${o.priorite} ${o.statut === 'confirmee' ? 'confirmee' : ''} ${o.statut === 'administree' ? 'administree' : ''}">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">
+                <div>
+                    <div style="font-weight:700">${o.patientNom} <span class="small muted">· Ch. ${o.patientChambre||'—'}</span></div>
+                    <div class="small">${new Date(o.createdAt).toLocaleString('fr-FR')} · Par: ${o.medecin}</div>
+                </div>
+                <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+                    <span class="status-badge ${o.priorite}">${o.priorite.toUpperCase()}</span>
+                    <span class="status-badge ${o.statut}">${o.statut}</span>
+                </div>
+            </div>
+            <div style="margin-top:10px">
+                <div class="small" style="font-weight:600;margin-bottom:6px">Médicaments:</div>
+                ${o.medicaments.map(m => `
+                    <div class="ordo-med-tag" style="margin-bottom:4px">
+                        <span style="flex:1"><strong>${m.nom}</strong> — ${m.posologie||'—'} · ${m.voie||'—'} · ${m.duree||'—'}</span>
+                        ${m.risk === 'high' ? '<span class="lasa-flag">⚠️</span>' : ''}
+                    </div>`).join('')}
+            </div>
+            ${o.notes ? `<div class="small muted" style="margin-top:8px">Notes: ${o.notes}</div>` : ''}
+            ${o.commentairesInfirmier && o.commentairesInfirmier.length ? `
+                <div style="margin-top:8px">
+                    ${o.commentairesInfirmier.map(c => `
+                        <div class="comment-bubble inf">
+                            💉 <strong>${c.auteur}</strong> (${new Date(c.date).toLocaleString('fr-FR')}): ${c.texte}
+                        </div>`).join('')}
+                </div>` : ''}
+        </div>`).join('');
+}
+
+// ---- INFIRMIER ----
+function renderInfirmierOrdonnances() {
+    const container = document.getElementById('infOrdoList');
+    if (!container) return;
+    const pending = ORDONNANCES.filter(o => o.statut === 'envoyee' || o.statut === 'urgente' || o.statut === 'stat');
+    
+    // Update badge
+    const badge = document.getElementById('ordoBadgeCount');
+    if (badge) badge.textContent = `${pending.length} ordonnances`;
+    const soinsBadge = document.getElementById('soinsBadgeCount');
+    if (soinsBadge) {
+        const pendingSoins = (typeof SOINS_PRESCRIPTIONS !== 'undefined' ? SOINS_PRESCRIPTIONS : []).filter(s => s.statut === 'envoyee').length;
+        soinsBadge.textContent = `${pendingSoins} soins`;
+    }
+
+    if (pending.length === 0) {
+        container.innerHTML = '<div class="ok" style="text-align:center;padding:24px">✅ Aucune ordonnance en attente</div>';
+        return;
+    }
+    container.innerHTML = pending.map(o => {
+        const patient = PATIENTS.find(x => x.id === o.patientId);
+        const allergyHtml = patient && patient.allergies.length
+            ? `<div class="lasawarning" style="margin-top:6px;padding:6px 10px">⚠️ Allergies: ${patient.allergies.join(', ')}</div>` : '';
+        return `
+        <div class="ordo-card ${o.priorite}">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">
+                <div>
+                    <div style="font-weight:700;font-size:15px">${o.patientNom} <span class="small muted">· Ch. ${o.patientChambre||'—'}</span></div>
+                    <div class="small">Prescrit le ${new Date(o.createdAt).toLocaleString('fr-FR')} · Dr. ${o.medecin}</div>
+                    ${allergyHtml}
+                </div>
+                <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+                    <span class="status-badge ${o.priorite}">${o.priorite.toUpperCase()}</span>
+                    <span class="status-badge envoyee">En attente</span>
+                </div>
+            </div>
+            ${patient ? `
+            <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
+                <span class="small" style="background:#f0f7ff;padding:4px 8px;border-radius:6px">❤️ ${patient.constantes.pouls||'—'} bpm</span>
+                <span class="small" style="background:#f0f7ff;padding:4px 8px;border-radius:6px">🩺 ${patient.constantes.tension||'—'} mmHg</span>
+                <span class="small" style="background:#f0f7ff;padding:4px 8px;border-radius:6px">🌡️ ${patient.constantes.temp||'—'}°C</span>
+                <span class="small" style="background:#f0f7ff;padding:4px 8px;border-radius:6px">💨 SpO₂ ${patient.constantes.spo2||'—'}%</span>
+            </div>` : ''}
+            <div style="margin-top:10px">
+                <div class="small" style="font-weight:600;margin-bottom:6px">Médicaments à administrer:</div>
+                ${o.medicaments.map(m => `
+                    <div class="ordo-med-tag" style="margin-bottom:4px">
+                        <span style="flex:1">
+                            <strong>${m.nom}</strong>${m.marque ? ' ('+m.marque+')' : ''} — 
+                            <span style="color:#0B3D91">${m.posologie||'posologie non spécifiée'}</span> · 
+                            ${m.voie||''} · ${m.duree||''}
+                        </span>
+                        ${m.risk === 'high' ? '<span class="lasa-flag">⚠️ Haut Risque</span>' : ''}
+                    </div>`).join('')}
+            </div>
+            ${o.notes ? `<div class="small muted" style="margin-top:8px">📝 Notes méd.: ${o.notes}</div>` : ''}
+            <div style="margin-top:12px">
+                <textarea id="infComment_${o.id}" placeholder="Commentaire ou observation (optionnel)..." rows="2" style="width:100%;border-radius:8px;border:1px solid #e6e9ef;padding:8px;font-size:13px"></textarea>
+            </div>
+            <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+                <button class="ghost" onclick="infirmierAction('${o.id}','confirmee')">✔️ Confirmer réception</button>
+                <button class="btn" style="background:#0a6a2a" onclick="infirmierAction('${o.id}','administree')">✅ Marquer administrée</button>
+                <button class="ghost" style="color:#d94b4b" onclick="infirmierAction('${o.id}','rejetee')">❌ Rejeter</button>
+            </div>
+        </div>`}).join('');
+}
+
+function infirmierAction(ordoId, newStatut) {
+    const ordo = ORDONNANCES.find(o => String(o.id) === String(ordoId));
+    if (!ordo) return;
+    const commentEl = document.getElementById('infComment_' + ordoId);
+    const comment = commentEl ? commentEl.value.trim() : '';
+    if (comment) {
+        ordo.commentairesInfirmier = ordo.commentairesInfirmier || [];
+        ordo.commentairesInfirmier.push({
+            auteur: currentUser ? currentUser.username : 'Infirmier',
+            texte: comment,
+            date: new Date().toISOString(),
+            action: newStatut,
+        });
+    }
+    ordo.statut = newStatut;
+    ordo.updatedAt = new Date().toISOString();
+    saveOrdonnances();
+    const msgs = { confirmee: 'Réception confirmée', administree: 'Ordonnance marquée comme administrée', rejetee: 'Ordonnance rejetée' };
+    showNotification(msgs[newStatut] || 'Statut mis à jour', 'success');
+    renderInfirmierOrdonnances();
+    renderInfHistorique();
+}
+
+function renderInfPatientList() {
+    const container = document.getElementById('infPatientList');
+    if (!container) return;
+    const q = (document.getElementById('infPatientSearch') || {value:''}).value.toLowerCase();
+    const filtered = PATIENTS.filter(p => `${p.nom} ${p.prenom} ${p.chambre}`.toLowerCase().includes(q));
+    if (filtered.length === 0) {
+        container.innerHTML = '<div class="muted small" style="padding:20px;text-align:center">Aucun patient</div>';
+        return;
+    }
+    container.innerHTML = filtered.map(p => {
+        const allergyWarn = p.allergies.length ? `<span style="color:#d94b4b;font-size:12px">⚠️ ${p.allergies.join(', ')}</span>` : '';
+        return `
+        <div class="patient-card" onclick="openPatientDetail(${p.id})">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+                <div>
+                    <div style="font-weight:700">${p.prenom} ${p.nom} <span class="small muted">· ${p.age} ans · Ch. ${p.chambre||'—'}</span></div>
+                    <div class="small">Groupe ${p.groupe}${p.antecedents.length ? ' · '+p.antecedents.slice(0,2).join(', ') : ''}</div>
+                    ${allergyWarn}
+                </div>
+                <div class="constante-grid" style="grid-template-columns:1fr 1fr;gap:6px;width:160px">
+                    <div class="constante-item" style="padding:6px"><div class="val" style="font-size:14px">${p.constantes.pouls||'—'}</div><div class="lbl">bpm</div></div>
+                    <div class="constante-item" style="padding:6px"><div class="val" style="font-size:14px">${p.constantes.spo2||'—'}%</div><div class="lbl">SpO₂</div></div>
+                </div>
+            </div>
+        </div>`;
+    }).join('');
+}
+
+function renderInfHistorique() {
+    const container = document.getElementById('infHistoriqueList');
+    if (!container) return;
+    const done = ORDONNANCES.filter(o => ['confirmee','administree','rejetee'].includes(o.statut));
+    if (done.length === 0) {
+        container.innerHTML = '<div class="muted small" style="padding:20px;text-align:center">Aucun historique</div>';
+        return;
+    }
+    container.innerHTML = done.map(o => `
+        <div class="ordo-card ${o.statut}">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+                <div>
+                    <div style="font-weight:700">${o.patientNom} <span class="small muted">· Ch. ${o.patientChambre||'—'}</span></div>
+                    <div class="small">${new Date(o.createdAt).toLocaleDateString('fr-FR')} · Dr. ${o.medecin}</div>
+                </div>
+                <span class="status-badge ${o.statut}">${o.statut}</span>
+            </div>
+            <div class="small" style="margin-top:8px">${o.medicaments.map(m => m.nom + (m.posologie ? ' '+m.posologie : '')).join(' · ')}</div>
+            ${o.commentairesInfirmier && o.commentairesInfirmier.length ? `
+                <div class="comment-bubble inf" style="margin-top:8px">
+                    💉 ${o.commentairesInfirmier[o.commentairesInfirmier.length-1].texte}
+                </div>` : ''}
+        </div>`).join('');
+}
+
+// ===========================================
+// SYSTÈME SOINS & BILANS — RENDU DYNAMIQUE
+// ===========================================
+
+let SOINS_PRESCRIPTIONS = JSON.parse(localStorage.getItem('vigi_soins') || '[]');
+function saveSoinsPrescriptions() { localStorage.setItem('vigi_soins', JSON.stringify(SOINS_PRESCRIPTIONS)); }
+
+const SOINS_CATALOGUE = {
+    bilan: {
+        label: '🧪 Bilans Biologiques', bg: '#eef5ff',
+        items: ['NFS (Numération Formule Sanguine)','CRP (Protéine C-Réactive)','Ionogramme sanguin','Glycémie à jeun','Glycémie capillaire','Créatinine / Urée','Bilan hépatique (ASAT/ALAT/GGT)','TP / TCA / INR','Fibrinogène','Groupe sanguin / RAI','Hémocultures x2','Procalcitonine (PCT)','Lactates','Troponine','BNP / NT-proBNP','TSH / T4','β-hCG','Albumine / Protidémie','Lipase','Amylase','Gazométrie artérielle (GDS)']
+    },
+    urines: {
+        label: '🧫 Bandelettes & Urines', bg: '#f0fff4',
+        items: ['Bandelette urinaire (BU)','ECBU (Examen Cytobactériologique des Urines)','Protéinurie des 24h','Créatininurie des 24h','Cytologie urinaire','Recherche de BK dans les urines','Recueil des urines de 24h']
+    },
+    pansement: {
+        label: '🩹 Pansements', bg: '#fff8f0',
+        items: ['Pansement simple (plaie propre)','Pansement complexe (plaie chronique)','Pansement escarre stade I-II','Pansement escarre stade III-IV','Détersion mécanique + pansement','Ablation de fils','Ablation d\'agrafes','Pansement compressif','Changement de drain','Soin de cicatrice','Pansement post-opératoire'],
+        extras: `<div style="margin-top:8px">
+            <input type="text" id="pansement-localisation" placeholder="📍 Localisation (ex: genou droit, moignon...)" style="width:100%;padding:7px 10px;border-radius:7px;border:1px solid #e6e9ef;font-size:13px"/>
+        </div>`
+    },
+    sondage: {
+        label: '🏥 Sondage Vésical', bg: '#f5f0ff',
+        items: ['Pose de sonde urinaire (SU) à demeure','Sondage évacuateur (aller-retour)','Ablation de sonde urinaire','Irrigation vésicale continue','Irrigation vésicale discontinue','Remplacement de sonde vésicale','Recueil stérile sur SU en place'],
+        extras: `<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+            <input type="text" id="sondage-charriere" placeholder="Taille (Ch. ex: 14, 16, 18)" style="width:150px;padding:7px 10px;border-radius:7px;border:1px solid #e6e9ef;font-size:13px"/>
+            <select id="sondage-type" style="flex:1;min-width:130px;padding:7px 10px;border-radius:7px;border:1px solid #e6e9ef;font-size:13px">
+                <option value="">Type de sonde</option>
+                <option>Foley 2 voies</option><option>Foley 3 voies</option>
+                <option>Coudée</option><option>Droite</option><option>Nélatonde</option>
+            </select>
+        </div>`
+    },
+    locaux: {
+        label: '💊 Soins Locaux & Techniques', bg: '#fff0f0',
+        items: ['Soins de bouche (buccaux)','Soins des yeux (instillation / lavage)','Nébulisation','Kinésithérapie respiratoire','Aspiration trachéo-bronchique','Soin de trachéotomie / trachéostomie','Pose de voie veineuse périphérique (VVP)','Ablation de VVP','Assistance pose VVC','Changement de pansement VVC','Injection sous-cutanée (SC)','Injection intramusculaire (IM)','Lavement évacuateur','Glycémie capillaire (contrôle)','Oxygénothérapie (réglage débit)','Pose de sonde naso-gastrique (SNG)','Ablation de SNG','Pesée du patient'],
+        extras: `<div style="margin-top:8px">
+            <input type="text" id="locaux-details" placeholder="Précisions : produit, fréquence, côté, remarques..." style="width:100%;padding:7px 10px;border-radius:7px;border:1px solid #e6e9ef;font-size:13px"/>
+        </div>`
+    }
+};
+
+const SOINS_GROUP_LABELS = {
+    bilan: '🧪 Bilan biologique', urines: '🧫 Bandelettes / Urines',
+    pansement: '🩹 Pansement', sondage: '🏥 Sondage vésical', locaux: '💊 Soins locaux'
+};
+
+function renderSoinsPrescrireUI() {
+    const container = document.getElementById('soins-prescrire');
+    if (!container) return;
+
+    // Construire les groupes
+    const groupsHtml = Object.entries(SOINS_CATALOGUE).map(([key, cat]) => {
+        const checkboxes = cat.items.map(item => {
+            const safeId = 'soin_' + key + '_' + item.replace(/[^a-zA-Z0-9]/g, '_');
+            return `<label style="display:flex;align-items:flex-start;gap:8px;font-size:13px;cursor:pointer;padding:5px 4px;border-radius:6px;transition:background .15s" onmouseover="this.style.background='#f7fbff'" onmouseout="this.style.background=''">
+                <input type="checkbox" id="${safeId}" data-group="${key}" data-label="${item.replace(/"/g,'&quot;')}" onchange="updateSoinsCount('${key}');updateSoinsRecap()" style="margin-top:2px;width:15px;height:15px;cursor:pointer">
+                <span>${item}</span>
+            </label>`;
+        }).join('');
+        return `
+        <div style="border:1px solid #e6e9ef;border-radius:10px;overflow:hidden">
+            <div style="background:${cat.bg};padding:10px 14px;font-weight:700;font-size:13px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none" onclick="toggleSoinsGroup('${key}')">
+                <span>${cat.label}</span>
+                <div style="display:flex;align-items:center;gap:8px">
+                    <span id="${key}-count" class="badge" style="font-size:11px;min-width:20px;text-align:center">0</span>
+                    <span id="${key}-chevron" style="font-size:11px;color:#666">▼</span>
+                </div>
+            </div>
+            <div id="group-${key}" style="padding:10px 14px;display:flex;flex-direction:column;gap:2px;border-top:1px solid #e6e9ef">
+                ${checkboxes}
+                ${cat.extras || ''}
+            </div>
+        </div>`;
+    }).join('');
+
+    container.innerHTML = `
+        <div class="columns" style="gap:16px;align-items:flex-start">
+            <div style="min-width:0">
+                <label>Patient</label>
+                <select id="soinsPatientSelect" style="width:100%;padding:10px;border-radius:8px;border:1px solid #e6e9ef" onchange="loadSoinsPatientInfo()">
+                    <option value="">-- Sélectionner un patient --</option>
+                    ${PATIENTS.map(p => `<option value="${p.id}">${p.prenom} ${p.nom} — Ch. ${p.chambre||'—'}</option>`).join('')}
+                </select>
+                <div id="soinsPatientInfo" style="margin-top:8px"></div>
+                <label style="margin-top:12px">Date & Heure planifiée</label>
+                <input type="datetime-local" id="soinsDateTime" value="${new Date().toISOString().slice(0,16)}" style="width:100%"/>
+                <label style="margin-top:12px">Priorité</label>
+                <select id="soinsPriority" style="width:100%;padding:10px;border-radius:8px;border:1px solid #e6e9ef">
+                    <option value="normale">Normale</option>
+                    <option value="urgente">Urgente ⚠️</option>
+                    <option value="stat">STAT 🔴 (Immédiat)</option>
+                </select>
+                <label style="margin-top:12px">Notes / Instructions pour l'infirmier</label>
+                <textarea id="soinsNotes" rows="3" placeholder="Instructions particulières, précautions, contexte clinique..."></textarea>
+
+                <div id="soinsRecap" style="margin-top:14px;display:none">
+                    <div style="font-weight:700;margin-bottom:8px;font-size:13px">📋 Actes sélectionnés :</div>
+                    <div id="soinsRecapContent" style="display:flex;flex-wrap:wrap;gap:5px"></div>
+                </div>
+                <div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap">
+                    <button class="ghost" onclick="clearSoins()">🔄 Réinitialiser</button>
+                    <button class="btn" style="background:#0a6a2a;flex:1" onclick="saveSoins('envoyee')">✅ Envoyer à l'infirmier</button>
+                </div>
+                <div id="soinsSaveMsg" style="margin-top:8px"></div>
+            </div>
+            <div style="min-width:0;display:flex;flex-direction:column;gap:10px">
+                <div style="font-weight:600;font-size:14px">Actes & Soins à prescrire :</div>
+                ${groupsHtml}
+            </div>
+        </div>`;
+}
+
+function toggleSoinsGroup(key) {
+    const el = document.getElementById('group-' + key);
+    const ch = document.getElementById(key + '-chevron');
+    if (!el) return;
+    const open = el.style.display !== 'none';
+    el.style.display = open ? 'none' : 'flex';
+    if (ch) ch.textContent = open ? '▶' : '▼';
+}
+
+function updateSoinsCount(group) {
+    const checked = document.querySelectorAll(`input[data-group="${group}"]:checked`).length;
+    const badge = document.getElementById(group + '-count');
+    if (badge) {
+        badge.textContent = checked;
+        badge.style.background = checked > 0 ? '#0B3D91' : '#eef5ff';
+        badge.style.color = checked > 0 ? '#fff' : '#0b3d91';
+    }
+}
+
+function updateSoinsRecap() {
+    const all = document.querySelectorAll('input[data-group]:checked');
+    const recap = document.getElementById('soinsRecap');
+    const content = document.getElementById('soinsRecapContent');
+    if (!recap || !content) return;
+    if (all.length === 0) { recap.style.display = 'none'; return; }
+    recap.style.display = 'block';
+    content.innerHTML = Array.from(all).map(cb =>
+        `<span style="background:#eef5ff;border:1px solid #bcd4f6;border-radius:20px;padding:3px 10px;font-size:12px;font-weight:600;color:#0B3D91">${cb.dataset.label}</span>`
+    ).join('');
+}
+
+function switchSoinsTab(tab) {
+    ['prescrire','suivi'].forEach(t => {
+        const el = document.getElementById('soins-' + t);
+        if (el) el.style.display = t === tab ? 'block' : 'none';
+        const btn = document.getElementById('tab-soins-' + t);
+        if (btn) { btn.style.borderBottom = t === tab ? '2px solid #0B3D91' : 'none'; btn.style.fontWeight = t === tab ? '700' : '500'; }
+    });
+    if (tab === 'suivi') renderSoinsSuivi();
+    if (tab === 'prescrire') renderSoinsPrescrireUI();
+}
+
+function populateSoinsPatientSelect() {
+    // Rendu entièrement dynamique via renderSoinsPrescrireUI, rien à faire ici
+}
+
+function loadSoinsPatientInfo() {
+    const id = parseInt(document.getElementById('soinsPatientSelect').value);
+    const box = document.getElementById('soinsPatientInfo');
+    if (!box) return;
+    if (!id) { box.innerHTML = ''; return; }
+    const p = PATIENTS.find(x => x.id === id);
+    if (!p) { box.innerHTML = ''; return; }
+    box.innerHTML = `
+        <div style="background:#f7fbff;border:1px solid #e6f0ff;border-radius:8px;padding:10px;font-size:13px">
+            <div style="font-weight:700;margin-bottom:4px">${p.prenom} ${p.nom} · ${p.age} ans · Ch. ${p.chambre||'—'}</div>
+            ${p.allergies.length ? `<div class="lasawarning" style="padding:4px 8px;margin:4px 0">⚠️ Allergies: ${p.allergies.join(', ')}</div>` : '<div class="ok" style="padding:4px 8px;margin:4px 0">✓ Aucune allergie connue</div>'}
+            <div class="small muted">${p.antecedents.length ? p.antecedents.join(', ') : 'Aucun antécédent'}</div>
+        </div>`;
+}
+
+function getSelectedSoinsActes() {
+    const actes = [];
+    document.querySelectorAll('input[data-group]:checked').forEach(cb => {
+        actes.push({ groupe: cb.dataset.group, label: cb.dataset.label });
+    });
+    const loc = (document.getElementById('pansement-localisation')||{value:''}).value.trim();
+    if (loc) actes.push({ groupe: 'pansement', label: '📍 ' + loc });
+    const ch = (document.getElementById('sondage-charriere')||{value:''}).value.trim();
+    const st = (document.getElementById('sondage-type')||{value:''}).value.trim();
+    if (ch) actes.push({ groupe: 'sondage', label: 'Taille: Ch.' + ch });
+    if (st) actes.push({ groupe: 'sondage', label: 'Type: ' + st });
+    const det = (document.getElementById('locaux-details')||{value:''}).value.trim();
+    if (det) actes.push({ groupe: 'locaux', label: '📝 ' + det });
+    return actes;
+}
+
+function saveSoins(statut) {
+    const patId = parseInt((document.getElementById('soinsPatientSelect')||{value:''}).value);
+    if (!patId) { showNotification('Sélectionnez un patient', 'warning'); return; }
+    const actes = getSelectedSoinsActes().filter(a => !a.label.startsWith('📍') && !a.label.startsWith('Taille') && !a.label.startsWith('Type') && !a.label.startsWith('📝'));
+    if (actes.length === 0) { showNotification('Sélectionnez au moins un acte', 'warning'); return; }
+    const allActes = getSelectedSoinsActes();
+    const patient = PATIENTS.find(x => x.id === patId);
+    const presc = {
+        id: Date.now(),
+        patientId: patId,
+        patientNom: patient ? `${patient.prenom} ${patient.nom}` : 'Inconnu',
+        patientChambre: patient ? patient.chambre : '',
+        medecin: currentUser ? currentUser.username : 'Médecin',
+        dateTime: (document.getElementById('soinsDateTime')||{value:''}).value || new Date().toISOString(),
+        priorite: (document.getElementById('soinsPriority')||{value:'normale'}).value,
+        notes: (document.getElementById('soinsNotes')||{value:''}).value,
+        actes: allActes,
+        statut,
+        commentaires: [],
+        createdAt: new Date().toISOString(),
+    };
+    SOINS_PRESCRIPTIONS.unshift(presc);
+    saveSoinsPrescriptions();
+    showNotification('✅ Soins envoyés à l\'infirmier', 'success');
+    const msg = document.getElementById('soinsSaveMsg');
+    if (msg) msg.innerHTML = '<div class="ok">✅ Prescription de soins envoyée avec succès</div>';
+    clearSoins();
+    renderSoinsPrescrireUI(); // re-render to reset checkboxes
+    setTimeout(() => { const m = document.getElementById('soinsSaveMsg'); if(m) m.innerHTML = ''; }, 3000);
+}
+
+function clearSoins() {
+    document.querySelectorAll('input[data-group]').forEach(cb => cb.checked = false);
+    Object.keys(SOINS_CATALOGUE).forEach(g => updateSoinsCount(g));
+    updateSoinsRecap();
+    ['pansement-localisation','sondage-charriere','locaux-details'].forEach(id => { const el = document.getElementById(id); if(el) el.value = ''; });
+    const st = document.getElementById('sondage-type'); if(st) st.value = '';
+    const n = document.getElementById('soinsNotes'); if(n) n.value = '';
+    const p = document.getElementById('soinsPatientSelect'); if(p) p.value = '';
+    const i = document.getElementById('soinsPatientInfo'); if(i) i.innerHTML = '';
+    const pr = document.getElementById('soinsPriority'); if(pr) pr.value = 'normale';
+}
+
+function renderSoinsSuivi() {
+    const container = document.getElementById('soinsSuiviList');
+    if (!container) return;
+    const f = (document.getElementById('soinsSuiviFilter')||{value:'all'}).value;
+    const list = f === 'all' ? SOINS_PRESCRIPTIONS : SOINS_PRESCRIPTIONS.filter(s => s.statut === f);
+    if (!list.length) { container.innerHTML = '<div class="muted small" style="padding:20px;text-align:center">Aucune prescription de soins</div>'; return; }
+    container.innerHTML = list.map(s => renderSoinsCard(s, false)).join('');
+}
+
+function renderSoinsCard(s, showActions) {
+    const groupes = [...new Set(s.actes.map(a => a.groupe))];
+    const actesHtml = groupes.map(g => {
+        const items = s.actes.filter(a => a.groupe === g);
+        return `<div style="margin-bottom:6px">
+            <div style="font-size:11px;font-weight:700;color:#0B3D91;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">${SOINS_GROUP_LABELS[g]||g}</div>
+            ${items.map(a => `<div class="ordo-med-tag" style="margin-bottom:3px;padding:5px 10px"><span style="font-size:13px">${a.label}</span></div>`).join('')}
+        </div>`;
+    }).join('');
+    const actionsHtml = showActions ? `
+        <div style="margin-top:12px;border-top:1px solid #f0f3f8;padding-top:10px">
+            <label class="small" style="margin-bottom:4px">Commentaire pour le médecin :</label>
+            <textarea id="soinsComment_${s.id}" placeholder="Observation, résultat, remarque..." rows="2"
+                style="width:100%;border-radius:8px;border:1px solid #e6e9ef;padding:8px;font-size:13px"></textarea>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+            <button class="ghost" onclick="infirmierSoinsAction('${s.id}','confirmee')">✔️ Confirmer</button>
+            <button class="btn" style="background:#0a6a2a" onclick="infirmierSoinsAction('${s.id}','realisee')">✅ Réalisé</button>
+            <button class="ghost" style="color:#d94b4b" onclick="infirmierSoinsAction('${s.id}','rejetee')">❌ Rejeter</button>
+        </div>` : '';
+    const commentsHtml = s.commentaires && s.commentaires.length
+        ? s.commentaires.map(c => `<div class="comment-bubble inf" style="margin-top:6px">💉 <strong>${c.auteur}</strong> · ${new Date(c.date).toLocaleString('fr-FR')}: ${c.texte}</div>`).join('') : '';
+    return `
+        <div class="ordo-card ${s.priorite} ${['confirmee','realisee'].includes(s.statut)?s.statut:''}">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">
+                <div>
+                    <div style="font-weight:700">${s.patientNom} <span class="small muted">· Ch. ${s.patientChambre||'—'}</span></div>
+                    <div class="small">${new Date(s.createdAt).toLocaleString('fr-FR')} · Dr. ${s.medecin}</div>
+                    ${s.dateTime ? `<div class="small muted">🕐 Planifié: ${new Date(s.dateTime).toLocaleString('fr-FR')}</div>` : ''}
+                </div>
+                <div style="display:flex;gap:5px;flex-wrap:wrap">
+                    <span class="status-badge ${s.priorite}">${s.priorite.toUpperCase()}</span>
+                    <span class="status-badge ${s.statut}">${s.statut}</span>
+                </div>
+            </div>
+            <div style="margin-top:12px">${actesHtml}</div>
+            ${s.notes ? `<div class="comment-bubble" style="margin-top:6px">📝 Dr: ${s.notes}</div>` : ''}
+            ${commentsHtml}
+            ${actionsHtml}
+        </div>`;
+}
+
+function renderInfirmierSoins() {
+    const container = document.getElementById('infSoinsList');
+    if (!container) return;
+    const pending = SOINS_PRESCRIPTIONS.filter(s => s.statut === 'envoyee');
+    const soinsBadge = document.getElementById('soinsBadgeCount');
+    if (soinsBadge) soinsBadge.textContent = `${pending.length} soins`;
+    if (!pending.length) { container.innerHTML = '<div class="ok" style="text-align:center;padding:24px">✅ Aucun soin en attente</div>'; return; }
+    container.innerHTML = pending.map(s => renderSoinsCard(s, true)).join('');
+}
+
+function infirmierSoinsAction(soinsId, newStatut) {
+    const s = SOINS_PRESCRIPTIONS.find(x => String(x.id) === String(soinsId));
+    if (!s) return;
+    const commentEl = document.getElementById('soinsComment_' + soinsId);
+    const comment = commentEl ? commentEl.value.trim() : '';
+    if (comment) {
+        s.commentaires = s.commentaires || [];
+        s.commentaires.push({ auteur: currentUser ? currentUser.username : 'Infirmier', texte: comment, date: new Date().toISOString() });
+    }
+    s.statut = newStatut;
+    s.updatedAt = new Date().toISOString();
+    saveSoinsPrescriptions();
+    showNotification({ confirmee:'Soin confirmé', realisee:'Soin marqué réalisé', rejetee:'Soin rejeté' }[newStatut] || 'Statut mis à jour', 'success');
+    renderInfirmierSoins();
+}
+
+// ===========================================
+// INFIRMIER : MODIFICATION CONSTANTES + OBSERVATIONS
+// ===========================================
+
+function openInfirmierConstantes(patientId) {
+    const p = PATIENTS.find(x => x.id === patientId);
+    if (!p) return;
+    const obs = (p.observationsInfirmier || []).slice(-3).reverse();
+    const html = `
+        <div>
+            <h3>📊 Paramètres vitaux — ${p.prenom} ${p.nom}</h3>
+            <div class="small muted" style="margin-bottom:12px">Ch. ${p.chambre||'—'} · ${p.age} ans · Groupe ${p.groupe}</div>
+
+            <div style="font-weight:600;margin-bottom:8px">Nouvelles constantes :</div>
+            <div class="constante-grid" style="grid-template-columns:1fr 1fr 1fr;gap:10px">
+                <div>
+                    <label class="small">🩺 Tension (mmHg)</label>
+                    <input type="text" id="ic_tension" value="${p.constantes.tension||''}" placeholder="120/80" style="width:100%"/>
+                </div>
+                <div>
+                    <label class="small">❤️ Pouls (bpm)</label>
+                    <input type="number" id="ic_pouls" value="${p.constantes.pouls||''}" placeholder="72" style="width:100%"/>
+                </div>
+                <div>
+                    <label class="small">🌡️ Température (°C)</label>
+                    <input type="number" id="ic_temp" step="0.1" value="${p.constantes.temp||''}" placeholder="37.0" style="width:100%"/>
+                </div>
+                <div>
+                    <label class="small">💨 SpO₂ (%)</label>
+                    <input type="number" id="ic_spo2" value="${p.constantes.spo2||''}" placeholder="98" style="width:100%"/>
+                </div>
+                <div>
+                    <label class="small">⚖️ Poids (kg)</label>
+                    <input type="number" id="ic_poids" value="${p.constantes.poids||''}" placeholder="70" style="width:100%"/>
+                </div>
+                <div>
+                    <label class="small">🩸 Glycémie (g/L)</label>
+                    <input type="number" id="ic_glycemie" step="0.1" value="${p.constantes.glycemie||''}" placeholder="0.9" style="width:100%"/>
+                </div>
+                <div>
+                    <label class="small">💧 Diurèse (mL/h)</label>
+                    <input type="number" id="ic_diurese" value="${p.constantes.diurese||''}" placeholder="50" style="width:100%"/>
+                </div>
+                <div>
+                    <label class="small">🫁 FR (cycles/min)</label>
+                    <input type="number" id="ic_fr" value="${p.constantes.fr||''}" placeholder="16" style="width:100%"/>
+                </div>
+                <div>
+                    <label class="small">😣 Douleur (0-10)</label>
+                    <input type="number" id="ic_douleur" min="0" max="10" value="${p.constantes.douleur||''}" placeholder="0" style="width:100%"/>
+                </div>
+            </div>
+
+            <div style="margin-top:16px">
+                <label class="small">📝 Observation / Message pour le médecin</label>
+                <textarea id="ic_observation" rows="4" placeholder="Décrire l'état clinique du patient, toute évolution notable, résultats de soins réalisés, comportement, plaintes..." style="width:100%"></textarea>
+            </div>
+
+            ${obs.length ? `
+            <div style="margin-top:14px">
+                <div style="font-weight:600;font-size:13px;margin-bottom:8px">Observations précédentes :</div>
+                ${obs.map(o => `
+                    <div class="comment-bubble inf" style="margin-bottom:6px">
+                        <div style="display:flex;justify-content:space-between;font-size:11px;color:#555;margin-bottom:3px">
+                            <span>💉 ${o.auteur}</span><span>${new Date(o.date).toLocaleString('fr-FR')}</span>
+                        </div>
+                        ${o.texte}
+                        ${o.constantes ? `<div style="font-size:11px;color:#0B3D91;margin-top:3px">TA:${o.constantes.tension||'—'} · Pouls:${o.constantes.pouls||'—'} · T°:${o.constantes.temp||'—'} · SpO₂:${o.constantes.spo2||'—'}%</div>` : ''}
+                    </div>`).join('')}
+            </div>` : ''}
+
+            <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:20px;flex-wrap:wrap">
+                <button class="ghost" onclick="closeOverlay()">Annuler</button>
+                <button class="btn" onclick="saveInfirmierConstantes(${patientId})">💾 Enregistrer</button>
+            </div>
+        </div>`;
+    showOverlay(html);
+}
+
+function saveInfirmierConstantes(patientId) {
+    const p = PATIENTS.find(x => x.id === patientId);
+    if (!p) return;
+    const newConstantes = {
+        tension: document.getElementById('ic_tension').value,
+        pouls: document.getElementById('ic_pouls').value,
+        temp: document.getElementById('ic_temp').value,
+        spo2: document.getElementById('ic_spo2').value,
+        poids: document.getElementById('ic_poids').value,
+        glycemie: document.getElementById('ic_glycemie').value,
+        diurese: document.getElementById('ic_diurese').value,
+        fr: document.getElementById('ic_fr').value,
+        douleur: document.getElementById('ic_douleur').value,
+    };
+    p.constantes = newConstantes;
+    const obs = document.getElementById('ic_observation').value.trim();
+    if (obs) {
+        p.observationsInfirmier = p.observationsInfirmier || [];
+        p.observationsInfirmier.push({
+            auteur: currentUser ? currentUser.username : 'Infirmier',
+            texte: obs,
+            date: new Date().toISOString(),
+            constantes: { ...newConstantes },
+        });
+    }
+    savePatients();
+    showNotification('Constantes et observations enregistrées ✓', 'success');
+    closeOverlay();
+    renderInfPatientList();
+}
+
+// Surcharge de renderInfPatientList pour ajouter le bouton constantes
+function renderInfPatientList() {
+    const container = document.getElementById('infPatientList');
+    if (!container) return;
+    const q = (document.getElementById('infPatientSearch')||{value:''}).value.toLowerCase();
+    const filtered = PATIENTS.filter(p => `${p.nom} ${p.prenom} ${p.chambre}`.toLowerCase().includes(q));
+    if (!filtered.length) { container.innerHTML = '<div class="muted small" style="padding:20px;text-align:center">Aucun patient</div>'; return; }
+    container.innerHTML = filtered.map(p => {
+        const allergyWarn = p.allergies.length ? `<div style="color:#d94b4b;font-size:12px;margin-top:3px">⚠️ Allergies: ${p.allergies.join(', ')}</div>` : '';
+        const obsCount = (p.observationsInfirmier||[]).length;
+        const lastObs = obsCount > 0 ? p.observationsInfirmier[p.observationsInfirmier.length-1] : null;
+        return `
+        <div class="patient-card">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">
+                <div style="flex:1;min-width:0" onclick="openPatientDetail(${p.id})" style="cursor:pointer">
+                    <div style="font-weight:700;font-size:15px;cursor:pointer" onclick="openPatientDetail(${p.id})">${p.prenom} ${p.nom}
+                        <span class="small muted">· ${p.age} ans · Ch. ${p.chambre||'—'}</span>
+                    </div>
+                    <div class="small">Groupe ${p.groupe}${p.antecedents.length ? ' · '+p.antecedents.slice(0,2).join(', ') : ''}</div>
+                    ${allergyWarn}
+                    ${lastObs ? `<div class="comment-bubble inf" style="margin-top:6px;font-size:12px">💉 Dernière obs: ${lastObs.texte.substring(0,80)}${lastObs.texte.length>80?'...':''}</div>` : ''}
+                </div>
+                <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end">
+                    <div class="constante-grid" style="grid-template-columns:1fr 1fr 1fr;gap:5px;width:210px">
+                        <div class="constante-item" style="padding:5px"><div class="val" style="font-size:13px">${p.constantes.tension||'—'}</div><div class="lbl">TA</div></div>
+                        <div class="constante-item" style="padding:5px"><div class="val" style="font-size:13px">${p.constantes.pouls||'—'}</div><div class="lbl">Pouls</div></div>
+                        <div class="constante-item" style="padding:5px"><div class="val" style="font-size:13px">${p.constantes.spo2||'—'}%</div><div class="lbl">SpO₂</div></div>
+                        <div class="constante-item" style="padding:5px"><div class="val" style="font-size:13px">${p.constantes.temp||'—'}°</div><div class="lbl">T°</div></div>
+                        <div class="constante-item" style="padding:5px"><div class="val" style="font-size:13px">${p.constantes.douleur||'0'}/10</div><div class="lbl">Douleur</div></div>
+                        <div class="constante-item" style="padding:5px"><div class="val" style="font-size:13px">${obsCount}</div><div class="lbl">Obs.</div></div>
+                    </div>
+                    <button class="btn" style="width:100%;font-size:12px;padding:6px 10px" onclick="openInfirmierConstantes(${p.id})">📊 Constantes & Obs.</button>
+                </div>
+            </div>
+        </div>`;
+    }).join('');
+}
+
+// Update initApp to also init patient data
+
 window.addEventListener('DOMContentLoaded', () => {
     applyInitialTheme();
-    
-    // Vérifier la compatibilité TensorFlow.js
+
     if (typeof tf === 'undefined' || typeof mobilenet === 'undefined') {
         console.warn('TensorFlow.js ou MobileNet non disponible');
-        showNotification('Attention: Fonctionnalités IA limitées (TensorFlow.js non chargé)', 'warning');
     } else {
         console.log('TensorFlow.js et MobileNet disponibles');
     }
-    
-    // Check for existing user session
+
     const savedUser = localStorage.getItem('currentUser');
     if (savedUser) {
         currentUser = JSON.parse(savedUser);
@@ -2956,7 +4311,6 @@ window.addEventListener('DOMContentLoaded', () => {
         updateUIForRole(currentUser.role);
         initApp();
     } else {
-        // Pré-remplir les identifiants pour faciliter les tests
         document.getElementById('username').value = 'medsafe';
         document.getElementById('password').value = '12345';
     }
