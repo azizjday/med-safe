@@ -781,6 +781,12 @@
                     
                     <!-- ML Model Status -->
                     <div style="margin-top: 20px; border-top: 1px solid #f0f3f8; padding-top: 15px;">
+                        <h4>Réinitialisation</h4>
+                        <button class="ghost" style="color:#d94b4b;margin-bottom:8px" onclick="resetDemoPatients()">🔄 Réinitialiser les 20 patients démo</button>
+                        <div class="small muted">Recharge les 20 patients de démonstration (efface les patients actuels)</div>
+                    </div>
+                    <!-- ML Model Status -->
+                    <div style="margin-top: 20px; border-top: 1px solid #f0f3f8; padding-top: 15px;">
                         <h4>État du Modèle Machine Learning</h4>
                         <div id="mlStatus" class="ok" style="padding: 8px; border-radius: 6px; margin-bottom: 10px;">
                             <strong>✓ TensorFlow.js chargé</strong> - Prêt pour l'analyse d'images
@@ -829,6 +835,7 @@
         </main>
 
         <footer>MED-SAFE TN — Prototype connecté • PFE • 2025/2026</footer>
+        <div id="dbStatusMsg" style="display:none;text-align:center;padding:6px 14px;border-radius:8px;font-size:12px;font-weight:600;margin-top:8px"></div>
     </div>
 
     <div id="overlayRoot"></div>
@@ -2226,68 +2233,52 @@ function closeCamera() {
 
 // Initialisation de l'application
 function initApp() {
-    // Initialize Fuse.js for fuzzy search
     initFuse();
-    
-    // Check for existing user session
+
     const savedUser = localStorage.getItem('currentUser');
     if (savedUser) {
         currentUser = JSON.parse(savedUser);
         updateUIForRole(currentUser.role);
     }
-    
-    // Request notification permission
+
     requestNotificationPermission();
-    
-    // Register service worker for offline support
     registerServiceWorker();
-    
-    // Check online status
     checkOnlineStatus();
     window.addEventListener('online', checkOnlineStatus);
     window.addEventListener('offline', checkOnlineStatus);
-    
-    // Initialiser l'indicateur ML
     updateMlIndicator();
-    
-    // Précharger le modèle ML en arrière-plan
+
     setTimeout(() => {
-        if (mlService.isModelAvailable()) {
-            console.log('Modèle ML déjà chargé');
-        } else {
-            mlService.loadModel().catch(err => {
-                console.warn('Échec du préchargement du modèle ML:', err);
-            });
+        if (!mlService.isModelAvailable()) {
+            mlService.loadModel().catch(err => console.warn('ML:', err));
         }
     }, 2000);
-    
+
     renderMedList();
     renderLibrary();
     renderDashboard();
     renderAdminPanel();
-    
-    // Route to default section based on role
-    if (currentUser && currentUser.role === 'medecin') {
-        showSection('ordonnance');
-    } else if (currentUser && currentUser.role === 'infirmier') {
-        showSection('infirmier');
-    } else {
-        showSection('home');
-    }
-    
-    // Raccourci clavier pour la recherche
+
+    // Lancer la sync base de données (Firebase ou local)
+    initDatabase().then(() => {
+        if (currentUser && currentUser.role === 'medecin') {
+            showSection('ordonnance');
+        } else if (currentUser && currentUser.role === 'infirmier') {
+            showSection('infirmier');
+        } else {
+            showSection('home');
+        }
+    });
+
     document.addEventListener('keydown', (e) => {
         if (e.key === '/' && document.activeElement.tagName !== 'INPUT') {
             e.preventDefault();
             document.getElementById('searchInput').focus();
         }
     });
-    
-    // Entrée pour lancer la recherche
+
     document.getElementById('searchInput').addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') {
-            doSearch();
-        }
+        if (e.key === 'Enter') doSearch();
     });
 }
 
@@ -3230,26 +3221,237 @@ function refreshFromAPI() {
 
 // ===========================================
 // SYSTÈME PATIENTS, ORDONNANCES, MÉDECIN/INFIRMIER
+// BASE DE DONNÉES : Firebase Realtime Database
+// Sync temps réel entre tous les appareils
 // ===========================================
 
-// ---- Données ----
-let PATIENTS = JSON.parse(localStorage.getItem('vigi_patients') || '[]');
-if (PATIENTS.length === 0) {
-    // Données de démonstration
-    PATIENTS = [
-        { id: 1, nom: 'Ben Ali', prenom: 'Ahmed', age: 58, chambre: 'A-204', groupe: 'B+', allergies: ['Pénicilline'], antecedents: ['HTA', 'Diabète type 2'], constantes: { tension: '145/90', pouls: '78', temp: '37.2', spo2: '97', poids: '82' }, ordonnances: [] },
-        { id: 2, nom: 'Trabelsi', prenom: 'Fatma', age: 34, chambre: 'B-112', groupe: 'A+', allergies: [], antecedents: ['Asthme'], constantes: { tension: '120/75', pouls: '72', temp: '36.8', spo2: '99', poids: '61' }, ordonnances: [] },
-        { id: 3, nom: 'Chaabane', prenom: 'Mohamed', age: 72, chambre: 'C-301', groupe: 'O-', allergies: ['Sulfamides', 'Ibuprofène'], antecedents: ['Insuffisance cardiaque', 'ACFA'], constantes: { tension: '130/80', pouls: '88', temp: '37.5', spo2: '95', poids: '74' }, ordonnances: [] },
-    ];
-    localStorage.setItem('vigi_patients', JSON.stringify(PATIENTS));
-}
+// ---- Firebase Realtime Database Config ----
+// Projet Firebase public dédié à MedSafe TN (Realtime DB - mode test 30j)
+// Pour un usage en production : créez votre propre projet Firebase gratuit
+const FIREBASE_URL = 'https://medsafe-tn-default-rtdb.europe-west1.firebasedatabase.app';
+let DB_ONLINE = false;
+let _pollInterval = null;
+let _lastHash = { p: '', o: '', s: '' };
 
-let ORDONNANCES = JSON.parse(localStorage.getItem('vigi_ordonnances') || '[]');
-let ordoMedItems = []; // médicaments en cours d'ajout dans l'ordo
+// ---- 20 Patients démo ----
+const DEMO_PATIENTS = [
+    { id:'p1',  nom:'Ben Ali',    prenom:'Ahmed',    age:58, chambre:'A-101', groupe:'B+',  allergies:['Pénicilline'],              antecedents:['HTA','Diabète type 2'],          constantes:{tension:'145/90',pouls:'78', temp:'37.2',spo2:'97', poids:'82' }, observationsInfirmier:[] },
+    { id:'p2',  nom:'Trabelsi',   prenom:'Fatma',    age:34, chambre:'A-102', groupe:'A+',  allergies:[],                           antecedents:['Asthme'],                        constantes:{tension:'120/75',pouls:'72', temp:'36.8',spo2:'99', poids:'61' }, observationsInfirmier:[] },
+    { id:'p3',  nom:'Chaabane',   prenom:'Mohamed',  age:72, chambre:'A-103', groupe:'O-',  allergies:['Sulfamides','Ibuprofène'],  antecedents:['Insuffisance cardiaque','ACFA'], constantes:{tension:'130/80',pouls:'88', temp:'37.5',spo2:'95', poids:'74' }, observationsInfirmier:[] },
+    { id:'p4',  nom:'Mansouri',   prenom:'Leila',    age:45, chambre:'B-201', groupe:'AB+', allergies:['Aspirine'],                 antecedents:['Migraine chronique'],            constantes:{tension:'135/85',pouls:'80', temp:'37.0',spo2:'98', poids:'68' }, observationsInfirmier:[] },
+    { id:'p5',  nom:'Khlifi',     prenom:'Karim',    age:29, chambre:'B-202', groupe:'A-',  allergies:[],                           antecedents:['Appendicectomie 2018'],          constantes:{tension:'115/70',pouls:'65', temp:'36.5',spo2:'100',poids:'75' }, observationsInfirmier:[] },
+    { id:'p6',  nom:'Saidi',      prenom:'Meryem',   age:63, chambre:'B-203', groupe:'B-',  allergies:['Morphine'],                 antecedents:['Cancer sein (rémission)','HTA'], constantes:{tension:'140/90',pouls:'82', temp:'37.8',spo2:'94', poids:'58' }, observationsInfirmier:[] },
+    { id:'p7',  nom:'Hamdi',      prenom:'Sofiane',  age:51, chambre:'C-301', groupe:'O+',  allergies:[],                           antecedents:['Diabète type 1','Neuropathie'], constantes:{tension:'128/82',pouls:'76', temp:'37.1',spo2:'97', poids:'90' }, observationsInfirmier:[] },
+    { id:'p8',  nom:'Zarrouk',    prenom:'Nadia',    age:38, chambre:'C-302', groupe:'A+',  allergies:['Tétracyclines'],            antecedents:['Lupus érythémateux'],            constantes:{tension:'118/74',pouls:'70', temp:'37.3',spo2:'98', poids:'55' }, observationsInfirmier:[] },
+    { id:'p9',  nom:'Boughanmi',  prenom:'Khalil',   age:67, chambre:'C-303', groupe:'B+',  allergies:['AINS'],                    antecedents:['BPCO','Tabagisme sevré'],        constantes:{tension:'150/95',pouls:'90', temp:'37.6',spo2:'92', poids:'78' }, observationsInfirmier:[] },
+    { id:'p10', nom:'Arfaoui',    prenom:'Yasmine',  age:22, chambre:'D-401', groupe:'AB-', allergies:[],                           antecedents:[],                                constantes:{tension:'110/65',pouls:'62', temp:'36.7',spo2:'100',poids:'52' }, observationsInfirmier:[] },
+    { id:'p11', nom:'Marzouki',   prenom:'Hedi',     age:55, chambre:'D-402', groupe:'O+',  allergies:['Contraste iodé'],           antecedents:['Insuffisance rénale CKD3'],      constantes:{tension:'138/88',pouls:'84', temp:'37.4',spo2:'96', poids:'88' }, observationsInfirmier:[] },
+    { id:'p12', nom:'Ghribi',     prenom:'Amira',    age:41, chambre:'D-403', groupe:'A+',  allergies:[],                           antecedents:['Hypothyroïdie','Dépression'],    constantes:{tension:'122/78',pouls:'68', temp:'36.9',spo2:'99', poids:'64' }, observationsInfirmier:[] },
+    { id:'p13', nom:'Bouhajja',   prenom:'Tarek',    age:76, chambre:'E-501', groupe:'B+',  allergies:['Pénicilline','Sulfonamides'],antecedents:['Alzheimer','HTA','FA'],          constantes:{tension:'155/100',pouls:'92',temp:'38.1',spo2:'93', poids:'70' }, observationsInfirmier:[] },
+    { id:'p14', nom:'Hammami',    prenom:'Sonia',    age:32, chambre:'E-502', groupe:'O-',  allergies:[],                           antecedents:['Grossesse 28SA'],                constantes:{tension:'105/60',pouls:'88', temp:'36.6',spo2:'99', poids:'71' }, observationsInfirmier:[] },
+    { id:'p15', nom:'Dridi',      prenom:'Amine',    age:48, chambre:'E-503', groupe:'A-',  allergies:['Vancomycine'],              antecedents:['VIH sous ARV','Hépatite B'],     constantes:{tension:'125/80',pouls:'74', temp:'37.2',spo2:'97', poids:'67' }, observationsInfirmier:[] },
+    { id:'p16', nom:'Rezgui',     prenom:'Olfa',     age:60, chambre:'F-601', groupe:'AB+', allergies:[],                           antecedents:['Polyarthrite rhumatoïde'],       constantes:{tension:'132/84',pouls:'78', temp:'37.0',spo2:'98', poids:'72' }, observationsInfirmier:[] },
+    { id:'p17', nom:'Jomni',      prenom:'Bilel',    age:19, chambre:'F-602', groupe:'B+',  allergies:[],                           antecedents:['Drépanocytose SS'],              constantes:{tension:'108/68',pouls:'96', temp:'38.5',spo2:'91', poids:'58' }, observationsInfirmier:[] },
+    { id:'p18', nom:'Chouchane',  prenom:'Salma',    age:53, chambre:'F-603', groupe:'O+',  allergies:['Codéine'],                  antecedents:['Fibromyalgie','Anxiété'],        constantes:{tension:'130/85',pouls:'80', temp:'37.1',spo2:'97', poids:'76' }, observationsInfirmier:[] },
+    { id:'p19', nom:'Ayari',      prenom:'Mehdi',    age:44, chambre:'G-701', groupe:'A+',  allergies:[],                           antecedents:['Épilepsie traitée'],             constantes:{tension:'120/78',pouls:'70', temp:'36.8',spo2:'99', poids:'80' }, observationsInfirmier:[] },
+    { id:'p20', nom:'Bensalem',   prenom:'Hajer',    age:69, chambre:'G-702', groupe:'B-',  allergies:['Metformine'],               antecedents:['Diabète type 2','Obésité'],      constantes:{tension:'148/94',pouls:'86', temp:'37.3',spo2:'95', poids:'102'}, observationsInfirmier:[] },
+];
+
+// ---- Variables en mémoire ----
+let PATIENTS = [];
+let ORDONNANCES = [];
+let ordoMedItems = [];
 let selectedOrdoMed = null;
 
-function savePatients() { localStorage.setItem('vigi_patients', JSON.stringify(PATIENTS)); }
-function saveOrdonnances() { localStorage.setItem('vigi_ordonnances', JSON.stringify(ORDONNANCES)); }
+// ==========================================
+// COUCHE BASE DE DONNÉES — Firebase REST API
+// Pas besoin de SDK : utilise l'API REST native
+// ==========================================
+
+async function fbGet(path) {
+    const r = await fetch(`${FIREBASE_URL}/${path}.json`, { signal: AbortSignal.timeout(4000) });
+    if (!r.ok) throw new Error('fbGet ' + r.status);
+    return r.json();
+}
+
+async function fbPut(path, data) {
+    const r = await fetch(`${FIREBASE_URL}/${path}.json`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+        signal: AbortSignal.timeout(5000)
+    });
+    if (!r.ok) throw new Error('fbPut ' + r.status);
+    return r.json();
+}
+
+// ---- Initialisation ----
+async function initDatabase() {
+    // ÉTAPE 1 : chargement local IMMÉDIAT (garanti, synchrone)
+    const storedP = (() => { try { return JSON.parse(localStorage.getItem('vigi_patients') || '[]'); } catch(e) { return []; } })();
+    PATIENTS = storedP.length >= 20 ? storedP : DEMO_PATIENTS.map(p => JSON.parse(JSON.stringify(p)));
+    ORDONNANCES = (() => { try { return JSON.parse(localStorage.getItem('vigi_ordonnances') || '[]'); } catch(e) { return []; } })();
+    SOINS_PRESCRIPTIONS = (() => { try { return JSON.parse(localStorage.getItem('vigi_soins') || '[]'); } catch(e) { return []; } })();
+    PATIENTS.sort((a, b) => (a.chambre || '').localeCompare(b.chambre || ''));
+    localStorage.setItem('vigi_patients', JSON.stringify(PATIENTS));
+    showDBStatus(`✓ ${PATIENTS.length} patients chargés`, 'success');
+
+    // ÉTAPE 2 : tentative Firebase en arrière-plan
+    _tryFirebase();
+}
+
+async function _tryFirebase() {
+    try {
+        showDBStatus('⏳ Connexion au serveur partagé...', 'info');
+
+        // Récupérer les données distantes
+        let [remoteP, remoteO, remoteS] = await Promise.all([
+            fbGet('patients'),
+            fbGet('ordonnances'),
+            fbGet('soins')
+        ]);
+
+        // Firebase stocke les tableaux sous forme d'objet {0:…,1:…} ou null
+        const toArr = v => v === null ? [] : Array.isArray(v) ? v : Object.values(v);
+        remoteP = toArr(remoteP);
+        remoteO = toArr(remoteO);
+        remoteS = toArr(remoteS);
+
+        // Si la base distante est vide, pousser les données locales
+        if (remoteP.length === 0) {
+            await fbPut('patients', PATIENTS);
+            await fbPut('ordonnances', ORDONNANCES);
+            await fbPut('soins', SOINS_PRESCRIPTIONS);
+        } else {
+            // Utiliser les données distantes (plus récentes)
+            PATIENTS = remoteP.length >= 20 ? remoteP : PATIENTS;
+            ORDONNANCES = remoteO;
+            SOINS_PRESCRIPTIONS = remoteS;
+            PATIENTS.sort((a, b) => (a.chambre || '').localeCompare(b.chambre || ''));
+            ORDONNANCES.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+            SOINS_PRESCRIPTIONS.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+            localStorage.setItem('vigi_patients', JSON.stringify(PATIENTS));
+            localStorage.setItem('vigi_ordonnances', JSON.stringify(ORDONNANCES));
+            localStorage.setItem('vigi_soins', JSON.stringify(SOINS_PRESCRIPTIONS));
+            refreshCurrentView();
+        }
+
+        DB_ONLINE = true;
+        showDBStatus('🟢 Synchronisé — données partagées entre appareils', 'success');
+
+        // Polling toutes les 6 secondes pour recevoir les mises à jour des autres appareils
+        if (_pollInterval) clearInterval(_pollInterval);
+        _pollInterval = setInterval(_pollSync, 6000);
+
+    } catch(e) {
+        console.warn('Serveur partagé non disponible :', e.message);
+        showDBStatus('🟡 Mode local — données sur cet appareil uniquement', 'warning');
+        DB_ONLINE = false;
+    }
+}
+
+async function _pollSync() {
+    try {
+        const [remoteO, remoteS, remoteP] = await Promise.all([
+            fbGet('ordonnances'),
+            fbGet('soins'),
+            fbGet('patients')
+        ]);
+        const toArr = v => v === null ? [] : Array.isArray(v) ? v : Object.values(v);
+        const newO = toArr(remoteO);
+        const newS = toArr(remoteS);
+        const newP = toArr(remoteP);
+        const hash = JSON.stringify([newP.length, newO.length, newS.length,
+            newO.map(x => x.statut).join(), newS.map(x => x.statut).join(),
+            newP.map(x => (x.observationsInfirmier||[]).length).join()]);
+        if (hash === _lastHash.h) return;
+        _lastHash.h = hash;
+        if (newP.length >= 20) {
+            PATIENTS = newP;
+            PATIENTS.sort((a, b) => (a.chambre || '').localeCompare(b.chambre || ''));
+            localStorage.setItem('vigi_patients', JSON.stringify(PATIENTS));
+        }
+        ORDONNANCES = newO;
+        ORDONNANCES.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+        localStorage.setItem('vigi_ordonnances', JSON.stringify(ORDONNANCES));
+        SOINS_PRESCRIPTIONS = newS;
+        SOINS_PRESCRIPTIONS.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+        localStorage.setItem('vigi_soins', JSON.stringify(SOINS_PRESCRIPTIONS));
+        refreshCurrentView();
+    } catch(e) { /* silencieux */ }
+}
+
+// ---- Push vers Firebase + localStorage ----
+async function pushPatients() {
+    PATIENTS.sort((a, b) => (a.chambre || '').localeCompare(b.chambre || ''));
+    localStorage.setItem('vigi_patients', JSON.stringify(PATIENTS));
+    if (DB_ONLINE) { try { await fbPut('patients', PATIENTS); } catch(e) { DB_ONLINE = false; } }
+}
+
+async function pushOrdonnances() {
+    localStorage.setItem('vigi_ordonnances', JSON.stringify(ORDONNANCES));
+    if (DB_ONLINE) { try { await fbPut('ordonnances', ORDONNANCES); } catch(e) { DB_ONLINE = false; } }
+}
+
+async function pushSoins() {
+    localStorage.setItem('vigi_soins', JSON.stringify(SOINS_PRESCRIPTIONS));
+    if (DB_ONLINE) { try { await fbPut('soins', SOINS_PRESCRIPTIONS); } catch(e) { DB_ONLINE = false; } }
+}
+
+function resetDemoPatients() {
+    if (!confirm('Réinitialiser avec les 20 patients de démonstration ? Les patients actuels seront effacés.')) return;
+    PATIENTS = DEMO_PATIENTS.map(p => JSON.parse(JSON.stringify(p)));
+    pushPatients().then(() => {
+        showNotification('✓ 20 patients démo rechargés', 'success');
+        refreshCurrentView();
+    });
+}
+
+function showDBStatus(msg, type) {
+    const el = document.getElementById('dbStatusMsg');
+    if (!el) return;
+    el.textContent = msg;
+    el.style.display = 'block';
+    el.style.background = type === 'success' ? '#f4fff7' : type === 'warning' ? '#fffbeb' : '#eef5ff';
+    el.style.color = type === 'success' ? '#0a6a2a' : type === 'warning' ? '#92400e' : '#0b3d91';
+    if (type === 'success') setTimeout(() => { if (el) el.style.display = 'none'; }, 4000);
+}
+
+function refreshCurrentView() {
+    const active = document.querySelector('#main-section > section[style*="block"]');
+    if (!active) return;
+    const id = active.id;
+    if (id === 'ordonnance') { renderPatientList(); renderOrdonnancesSuivi(); populatePatientSelect(); }
+    if (id === 'infirmier')  { renderInfirmierOrdonnances(); renderInfPatientList(); renderInfHistorique(); renderInfirmierSoins(); }
+    if (id === 'soins')      { renderSoinsPrescrireUI(); renderSoinsSuivi(); }
+}
+
+// ---- Sauvegarde unifiée ----
+async function savePatients() { await pushPatients(); }
+
+async function savePatient(p) {
+    const idx = PATIENTS.findIndex(x => String(x.id) === String(p.id));
+    if (idx >= 0) PATIENTS[idx] = p; else PATIENTS.push(p);
+    await pushPatients();
+}
+
+async function saveOrdonnances() { await pushOrdonnances(); }
+
+async function saveOrdonnanceDoc(ordo) {
+    const idx = ORDONNANCES.findIndex(x => String(x.id) === String(ordo.id));
+    if (idx >= 0) ORDONNANCES[idx] = ordo; else ORDONNANCES.unshift(ordo);
+    await pushOrdonnances();
+    refreshCurrentView();
+}
+
+async function saveSoinsPrescriptions() { await pushSoins(); }
+
+async function saveSoinsDoc(s) {
+    const idx = SOINS_PRESCRIPTIONS.findIndex(x => String(x.id) === String(s.id));
+    if (idx >= 0) SOINS_PRESCRIPTIONS[idx] = s; else SOINS_PRESCRIPTIONS.unshift(s);
+    await pushSoins();
+    refreshCurrentView();
+}
 
 // ---- MÉDECIN TABS ----
 function switchMedecinTab(tab) {
@@ -3259,8 +3461,8 @@ function switchMedecinTab(tab) {
         btn.style.borderBottom = t === tab ? '2px solid #0B3D91' : 'none';
         btn.style.fontWeight = t === tab ? '700' : '500';
     });
-    if (tab === 'rediger') populatePatientSelect();
-    if (tab === 'suivi') renderOrdonnancesSuivi();
+    if (tab === 'rediger')  populatePatientSelect();
+    if (tab === 'suivi')    renderOrdonnancesSuivi();
     if (tab === 'dossiers') renderPatientList();
 }
 
@@ -3327,7 +3529,7 @@ function createPatient() {
     const prenom = document.getElementById('pPrenom').value.trim();
     if (!nom || !prenom) { showNotification('Nom et prénom obligatoires', 'warning'); return; }
     const pat = {
-        id: Date.now(),
+        id: 'p' + Date.now(),
         nom, prenom,
         age: parseInt(document.getElementById('pAge').value) || 0,
         chambre: document.getElementById('pChambre').value.trim(),
@@ -3341,54 +3543,78 @@ function createPatient() {
             spo2: document.getElementById('pSpo2').value,
             poids: document.getElementById('pPoids').value,
         },
+        observationsInfirmier: [],
         ordonnances: [],
         createdAt: new Date().toISOString()
     };
-    PATIENTS.push(pat);
-    savePatients();
-    closeOverlay();
-    showNotification(`Dossier de ${prenom} ${nom} créé`, 'success');
-    renderPatientList();
-    populatePatientSelect();
+    savePatient(pat).then(() => {
+        closeOverlay();
+        showNotification(`Dossier de ${prenom} ${nom} créé ✓`, 'success');
+        if (DB_MODE === 'local') { PATIENTS.push(pat); renderPatientList(); populatePatientSelect(); }
+    });
 }
 
 function openPatientDetail(id) {
-    const p = PATIENTS.find(x => x.id === id);
+    const p = PATIENTS.find(x => String(x.id) === String(id));
     if (!p) return;
-    const patOrdo = ORDONNANCES.filter(o => o.patientId === id).slice(-3).reverse();
+    const patOrdo = ORDONNANCES.filter(o => String(o.patientId) === String(id)).slice(-3).reverse();
+    const allObs = (p.observationsInfirmier || []).slice().reverse();
     const allergyHtml = p.allergies.length
         ? `<span class="lasawarning" style="padding:4px 8px;display:inline-block;margin-top:4px">⚠️ Allergies: ${p.allergies.join(', ')}</span>`
         : '<span class="ok" style="padding:4px 8px;display:inline-block;margin-top:4px">✓ Aucune allergie connue</span>';
 
+    const obsHtml = allObs.length ? allObs.map(o => `
+        <div class="comment-bubble inf" style="margin-bottom:8px">
+            <div style="display:flex;justify-content:space-between;font-size:11px;color:#555;margin-bottom:4px;flex-wrap:wrap;gap:4px">
+                <span>💉 <strong>${o.auteur}</strong></span>
+                <span>${new Date(o.date).toLocaleString('fr-FR')}</span>
+            </div>
+            <div>${o.texte}</div>
+            ${o.constantes ? `<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:5px">
+                ${o.constantes.tension?`<span style="background:#eef5ff;padding:2px 7px;border-radius:10px;font-size:11px">TA ${o.constantes.tension}</span>`:''}
+                ${o.constantes.pouls?`<span style="background:#eef5ff;padding:2px 7px;border-radius:10px;font-size:11px">♥ ${o.constantes.pouls}bpm</span>`:''}
+                ${o.constantes.temp?`<span style="background:#eef5ff;padding:2px 7px;border-radius:10px;font-size:11px">🌡 ${o.constantes.temp}°C</span>`:''}
+                ${o.constantes.spo2?`<span style="background:#eef5ff;padding:2px 7px;border-radius:10px;font-size:11px">💨 SpO₂ ${o.constantes.spo2}%</span>`:''}
+                ${o.constantes.glycemie?`<span style="background:#eef5ff;padding:2px 7px;border-radius:10px;font-size:11px">🩸 ${o.constantes.glycemie}g/L</span>`:''}
+                ${o.constantes.douleur?`<span style="background:#fff3cd;padding:2px 7px;border-radius:10px;font-size:11px">😣 Douleur ${o.constantes.douleur}/10</span>`:''}
+            </div>` : ''}
+        </div>`).join('') : '<p class="small muted">Aucune observation infirmier</p>';
+
     const html = `
-        <div>
+        <div style="max-height:80vh;overflow-y:auto">
             <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">
                 <div>
                     <h3 style="margin:0">${p.prenom} ${p.nom}</h3>
                     <div class="small">${p.age} ans · Chambre ${p.chambre || 'N/A'} · Groupe ${p.groupe}</div>
                     ${allergyHtml}
                 </div>
-                ${currentUser && currentUser.role === 'medecin' ? `<button class="btn" onclick="closeOverlay();switchMedecinTab('rediger');document.getElementById('ordoPatientSelect').value='${id}';loadPatientAllergies()">Nouvelle ordonnance</button>` : ''}
+                ${currentUser && currentUser.role === 'medecin' ? `<button class="btn" onclick="closeOverlay();switchMedecinTab('rediger');setTimeout(()=>{document.getElementById('ordoPatientSelect').value='${id}';loadPatientAllergies();},100)">Nouvelle ordonnance</button>` : ''}
             </div>
 
-            <div style="margin-top:16px">
+            <div style="margin-top:14px">
                 <strong>Antécédents:</strong>
                 <p class="small">${p.antecedents.length ? p.antecedents.join(', ') : 'Aucun antécédent renseigné'}</p>
             </div>
 
             <div style="margin-top:12px">
                 <strong>Dernières constantes:</strong>
-                <div class="constante-grid">
-                    <div class="constante-item"><div class="val">${p.constantes.tension || '—'}</div><div class="lbl">Tension mmHg</div></div>
+                <div class="constante-grid" style="grid-template-columns:repeat(3,1fr)">
+                    <div class="constante-item"><div class="val">${p.constantes.tension || '—'}</div><div class="lbl">Tension</div></div>
                     <div class="constante-item"><div class="val">${p.constantes.pouls || '—'}</div><div class="lbl">Pouls bpm</div></div>
                     <div class="constante-item"><div class="val">${p.constantes.temp || '—'}°C</div><div class="lbl">Température</div></div>
                     <div class="constante-item"><div class="val">${p.constantes.spo2 || '—'}%</div><div class="lbl">SpO₂</div></div>
                     <div class="constante-item"><div class="val">${p.constantes.poids || '—'} kg</div><div class="lbl">Poids</div></div>
+                    <div class="constante-item"><div class="val">${p.constantes.douleur || '0'}/10</div><div class="lbl">Douleur</div></div>
                 </div>
             </div>
 
             <div style="margin-top:16px">
-                <strong>Dernières ordonnances (3):</strong>
+                <strong>📋 Observations infirmier (${allObs.length}) :</strong>
+                <div style="margin-top:8px;max-height:200px;overflow-y:auto">${obsHtml}</div>
+            </div>
+
+            <div style="margin-top:16px">
+                <strong>Dernières ordonnances :</strong>
                 ${patOrdo.length === 0 ? '<p class="small muted">Aucune ordonnance</p>' : patOrdo.map(o => `
                     <div style="padding:8px;border:1px solid #e6e9ef;border-radius:8px;margin-top:8px">
                         <div style="display:flex;justify-content:space-between">
@@ -3396,19 +3622,21 @@ function openPatientDetail(id) {
                             <span class="status-badge ${o.statut}">${o.statut}</span>
                         </div>
                         <div class="small" style="margin-top:4px">${o.medicaments.map(m => m.nom).join(', ')}</div>
+                        ${(o.commentairesInfirmier||[]).length ? `<div class="comment-bubble inf" style="margin-top:4px;font-size:12px">💉 ${o.commentairesInfirmier[o.commentairesInfirmier.length-1].texte}</div>` : ''}
                     </div>`).join('')}
             </div>
 
             <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:20px">
                 <button class="ghost" onclick="closeOverlay()">Fermer</button>
-                ${currentUser && currentUser.role === 'medecin' ? `<button class="btn" onclick="openEditPatientConstantes(${id});closeOverlay()">Màj constantes</button>` : ''}
+                ${currentUser && currentUser.role === 'medecin' ? `<button class="btn" onclick="openEditPatientConstantes('${id}');closeOverlay()">Màj constantes</button>` : ''}
+                ${currentUser && currentUser.role === 'infirmier' ? `<button class="btn" onclick="closeOverlay();openInfirmierConstantes('${id}')">📊 Constantes & Obs.</button>` : ''}
             </div>
         </div>`;
     showOverlay(html);
 }
 
 function openEditPatientConstantes(id) {
-    const p = PATIENTS.find(x => x.id === id);
+    const p = PATIENTS.find(x => String(x.id) === String(id));
     if (!p) return;
     const html = `
         <div>
@@ -3438,10 +3666,11 @@ function saveConstantes(id) {
         spo2: document.getElementById('cSpo2').value,
         poids: document.getElementById('cPoids').value,
     };
-    savePatients();
-    showNotification('Constantes mises à jour', 'success');
-    closeOverlay();
-    renderPatientList();
+    savePatient(p).then(() => {
+        showNotification('Constantes mises à jour', 'success');
+        closeOverlay();
+        renderPatientList();
+    });
 }
 
 function renderPatientList() {
@@ -3456,18 +3685,27 @@ function renderPatientList() {
     }
     container.innerHTML = filtered.map(p => {
         const allergyWarn = p.allergies.length ? `<span style="color:#d94b4b;font-size:12px">⚠️ ${p.allergies.join(', ')}</span>` : '';
-        const nbOrdo = ORDONNANCES.filter(o => o.patientId === p.id).length;
+        const nbOrdo = ORDONNANCES.filter(o => String(o.patientId) === String(p.id)).length;
+        const nbObs = (p.observationsInfirmier || []).length;
+        const lastObs = nbObs > 0 ? p.observationsInfirmier[p.observationsInfirmier.length - 1] : null;
         return `
-        <div class="patient-card" onclick="openPatientDetail(${p.id})">
-            <div style="display:flex;justify-content:space-between;align-items:center">
-                <div>
-                    <div style="font-weight:700;font-size:15px">${p.prenom} ${p.nom} <span class="small muted">· ${p.age} ans · Chambre ${p.chambre||'—'}</span></div>
+        <div class="patient-card" onclick="openPatientDetail('${p.id}')">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">
+                <div style="flex:1;min-width:0">
+                    <div style="font-weight:700;font-size:15px">${p.prenom} ${p.nom} <span class="small muted">· ${p.age} ans · Ch. ${p.chambre||'—'}</span></div>
                     <div class="small" style="margin-top:2px">Groupe ${p.groupe} · ${p.antecedents.slice(0,2).join(', ')||'Aucun antécédent'}</div>
                     ${allergyWarn}
+                    ${lastObs ? `<div class="comment-bubble inf" style="margin-top:6px;font-size:12px;padding:5px 10px">
+                        💉 <strong>${lastObs.auteur}</strong> · ${new Date(lastObs.date).toLocaleDateString('fr-FR')} : ${lastObs.texte.substring(0,90)}${lastObs.texte.length>90?'...':''}
+                    </div>` : ''}
                 </div>
-                <div style="text-align:right">
-                    <span class="badge">${nbOrdo} ordonnance${nbOrdo !== 1 ? 's' : ''}</span>
-                    <div class="small muted" style="margin-top:4px">SpO₂ ${p.constantes.spo2||'—'}%</div>
+                <div style="text-align:right;flex-shrink:0">
+                    <div style="display:flex;gap:5px;justify-content:flex-end;margin-bottom:4px">
+                        <span class="badge">${nbOrdo} ordo</span>
+                        ${nbObs > 0 ? `<span class="badge" style="background:#f4fff7;color:#0a6a2a">💉 ${nbObs} obs</span>` : ''}
+                    </div>
+                    <div class="small muted">SpO₂ ${p.constantes.spo2||'—'}%</div>
+                    <div class="small muted">TA ${p.constantes.tension||'—'}</div>
                 </div>
             </div>
         </div>`;
@@ -3491,10 +3729,10 @@ function populatePatientSelect() {
 }
 
 function loadPatientAllergies() {
-    const id = parseInt(document.getElementById('ordoPatientSelect').value);
+    const id = document.getElementById('ordoPatientSelect').value;
     const warn = document.getElementById('ordoAllergyWarning');
     if (!id || !warn) return;
-    const p = PATIENTS.find(x => x.id === id);
+    const p = PATIENTS.find(x => String(x.id) === String(id));
     if (!p) { warn.innerHTML = ''; return; }
     if (p.allergies.length) {
         warn.innerHTML = `<div class="lasawarning">⚠️ Allergies connues: <strong>${p.allergies.join(', ')}</strong></div>`;
@@ -3619,12 +3857,12 @@ function clearOrdonnance() {
 }
 
 function saveOrdonnance(statut) {
-    const patId = parseInt(document.getElementById('ordoPatientSelect').value);
+    const patId = document.getElementById('ordoPatientSelect').value;
     if (!patId) { showNotification('Sélectionnez un patient', 'warning'); return; }
     if (ordoMedItems.length === 0) { showNotification('Ajoutez au moins un médicament', 'warning'); return; }
-    const patient = PATIENTS.find(x => x.id === patId);
+    const patient = PATIENTS.find(x => String(x.id) === String(patId));
     const ordo = {
-        id: Date.now(),
+        id: String(Date.now()),
         patientId: patId,
         patientNom: patient ? `${patient.prenom} ${patient.nom}` : 'Inconnu',
         patientChambre: patient ? patient.chambre : '',
@@ -3637,14 +3875,15 @@ function saveOrdonnance(statut) {
         commentairesInfirmier: [],
         createdAt: new Date().toISOString(),
     };
-    ORDONNANCES.unshift(ordo);
-    saveOrdonnances();
-    const msg = statut === 'envoyee' ? '✅ Ordonnance envoyée à l\'infirmier' : '💾 Brouillon sauvegardé';
-    document.getElementById('ordoSaveMsg').innerHTML = `<div class="ok">${msg}</div>`;
-    showNotification(msg, 'success');
-    clearOrdonnance();
-    setTimeout(() => { if (document.getElementById('ordoSaveMsg')) document.getElementById('ordoSaveMsg').innerHTML = ''; }, 3000);
-    renderOrdonnancesSuivi();
+    saveOrdonnanceDoc(ordo).then(() => {
+        const msg = statut === 'envoyee' ? '✅ Ordonnance envoyée à l\'infirmier' : '💾 Brouillon sauvegardé';
+        const msgEl = document.getElementById('ordoSaveMsg');
+        if (msgEl) msgEl.innerHTML = `<div class="ok">${msg}</div>`;
+        showNotification(msg, 'success');
+        clearOrdonnance();
+        setTimeout(() => { const m = document.getElementById('ordoSaveMsg'); if(m) m.innerHTML=''; }, 3000);
+        if (DB_MODE === 'local') renderOrdonnancesSuivi();
+    });
 }
 
 // ---- MÉDECIN: SUIVI ----
@@ -3763,48 +4002,14 @@ function infirmierAction(ordoId, newStatut) {
     const comment = commentEl ? commentEl.value.trim() : '';
     if (comment) {
         ordo.commentairesInfirmier = ordo.commentairesInfirmier || [];
-        ordo.commentairesInfirmier.push({
-            auteur: currentUser ? currentUser.username : 'Infirmier',
-            texte: comment,
-            date: new Date().toISOString(),
-            action: newStatut,
-        });
+        ordo.commentairesInfirmier.push({ auteur: currentUser ? currentUser.username : 'Infirmier', texte: comment, date: new Date().toISOString(), action: newStatut });
     }
     ordo.statut = newStatut;
     ordo.updatedAt = new Date().toISOString();
-    saveOrdonnances();
-    const msgs = { confirmee: 'Réception confirmée', administree: 'Ordonnance marquée comme administrée', rejetee: 'Ordonnance rejetée' };
-    showNotification(msgs[newStatut] || 'Statut mis à jour', 'success');
-    renderInfirmierOrdonnances();
-    renderInfHistorique();
-}
-
-function renderInfPatientList() {
-    const container = document.getElementById('infPatientList');
-    if (!container) return;
-    const q = (document.getElementById('infPatientSearch') || {value:''}).value.toLowerCase();
-    const filtered = PATIENTS.filter(p => `${p.nom} ${p.prenom} ${p.chambre}`.toLowerCase().includes(q));
-    if (filtered.length === 0) {
-        container.innerHTML = '<div class="muted small" style="padding:20px;text-align:center">Aucun patient</div>';
-        return;
-    }
-    container.innerHTML = filtered.map(p => {
-        const allergyWarn = p.allergies.length ? `<span style="color:#d94b4b;font-size:12px">⚠️ ${p.allergies.join(', ')}</span>` : '';
-        return `
-        <div class="patient-card" onclick="openPatientDetail(${p.id})">
-            <div style="display:flex;justify-content:space-between;align-items:center">
-                <div>
-                    <div style="font-weight:700">${p.prenom} ${p.nom} <span class="small muted">· ${p.age} ans · Ch. ${p.chambre||'—'}</span></div>
-                    <div class="small">Groupe ${p.groupe}${p.antecedents.length ? ' · '+p.antecedents.slice(0,2).join(', ') : ''}</div>
-                    ${allergyWarn}
-                </div>
-                <div class="constante-grid" style="grid-template-columns:1fr 1fr;gap:6px;width:160px">
-                    <div class="constante-item" style="padding:6px"><div class="val" style="font-size:14px">${p.constantes.pouls||'—'}</div><div class="lbl">bpm</div></div>
-                    <div class="constante-item" style="padding:6px"><div class="val" style="font-size:14px">${p.constantes.spo2||'—'}%</div><div class="lbl">SpO₂</div></div>
-                </div>
-            </div>
-        </div>`;
-    }).join('');
+    saveOrdonnanceDoc(ordo).then(() => {
+        showNotification({ confirmee:'Réception confirmée', administree:'Ordonnance administrée', rejetee:'Ordonnance rejetée' }[newStatut]||'Statut mis à jour', 'success');
+        if (DB_MODE === 'local') { renderInfirmierOrdonnances(); renderInfHistorique(); }
+    });
 }
 
 function renderInfHistorique() {
@@ -4025,14 +4230,14 @@ function getSelectedSoinsActes() {
 }
 
 function saveSoins(statut) {
-    const patId = parseInt((document.getElementById('soinsPatientSelect')||{value:''}).value);
+    const patId = (document.getElementById('soinsPatientSelect')||{value:''}).value;
     if (!patId) { showNotification('Sélectionnez un patient', 'warning'); return; }
     const actes = getSelectedSoinsActes().filter(a => !a.label.startsWith('📍') && !a.label.startsWith('Taille') && !a.label.startsWith('Type') && !a.label.startsWith('📝'));
     if (actes.length === 0) { showNotification('Sélectionnez au moins un acte', 'warning'); return; }
     const allActes = getSelectedSoinsActes();
-    const patient = PATIENTS.find(x => x.id === patId);
+    const patient = PATIENTS.find(x => String(x.id) === String(patId));
     const presc = {
-        id: Date.now(),
+        id: String(Date.now()),
         patientId: patId,
         patientNom: patient ? `${patient.prenom} ${patient.nom}` : 'Inconnu',
         patientChambre: patient ? patient.chambre : '',
@@ -4045,14 +4250,15 @@ function saveSoins(statut) {
         commentaires: [],
         createdAt: new Date().toISOString(),
     };
-    SOINS_PRESCRIPTIONS.unshift(presc);
-    saveSoinsPrescriptions();
-    showNotification('✅ Soins envoyés à l\'infirmier', 'success');
-    const msg = document.getElementById('soinsSaveMsg');
-    if (msg) msg.innerHTML = '<div class="ok">✅ Prescription de soins envoyée avec succès</div>';
-    clearSoins();
-    renderSoinsPrescrireUI(); // re-render to reset checkboxes
-    setTimeout(() => { const m = document.getElementById('soinsSaveMsg'); if(m) m.innerHTML = ''; }, 3000);
+    saveSoinsDoc(presc).then(() => {
+        showNotification('✅ Soins envoyés à l\'infirmier', 'success');
+        const msg = document.getElementById('soinsSaveMsg');
+        if (msg) msg.innerHTML = '<div class="ok">✅ Prescription de soins envoyée avec succès</div>';
+        clearSoins();
+        renderSoinsPrescrireUI();
+        setTimeout(() => { const m = document.getElementById('soinsSaveMsg'); if(m) m.innerHTML = ''; }, 3000);
+        if (DB_MODE === 'local') renderSoinsSuivi();
+    });
 }
 
 function clearSoins() {
@@ -4139,9 +4345,10 @@ function infirmierSoinsAction(soinsId, newStatut) {
     }
     s.statut = newStatut;
     s.updatedAt = new Date().toISOString();
-    saveSoinsPrescriptions();
-    showNotification({ confirmee:'Soin confirmé', realisee:'Soin marqué réalisé', rejetee:'Soin rejeté' }[newStatut] || 'Statut mis à jour', 'success');
-    renderInfirmierSoins();
+    saveSoinsDoc(s).then(() => {
+        showNotification({ confirmee:'Soin confirmé', realisee:'Soin marqué réalisé', rejetee:'Soin rejeté' }[newStatut]||'Statut mis à jour', 'success');
+        if (DB_MODE === 'local') renderInfirmierSoins();
+    });
 }
 
 // ===========================================
@@ -4149,7 +4356,7 @@ function infirmierSoinsAction(soinsId, newStatut) {
 // ===========================================
 
 function openInfirmierConstantes(patientId) {
-    const p = PATIENTS.find(x => x.id === patientId);
+    const p = PATIENTS.find(x => String(x.id) === String(patientId));
     if (!p) return;
     const obs = (p.observationsInfirmier || []).slice(-3).reverse();
     const html = `
@@ -4217,14 +4424,14 @@ function openInfirmierConstantes(patientId) {
 
             <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:20px;flex-wrap:wrap">
                 <button class="ghost" onclick="closeOverlay()">Annuler</button>
-                <button class="btn" onclick="saveInfirmierConstantes(${patientId})">💾 Enregistrer</button>
+                <button class="btn" onclick="saveInfirmierConstantes('${patientId}')">💾 Enregistrer</button>
             </div>
         </div>`;
     showOverlay(html);
 }
 
 function saveInfirmierConstantes(patientId) {
-    const p = PATIENTS.find(x => x.id === patientId);
+    const p = PATIENTS.find(x => String(x.id) === String(patientId));
     if (!p) return;
     const newConstantes = {
         tension: document.getElementById('ic_tension').value,
@@ -4248,10 +4455,11 @@ function saveInfirmierConstantes(patientId) {
             constantes: { ...newConstantes },
         });
     }
-    savePatients();
-    showNotification('Constantes et observations enregistrées ✓', 'success');
-    closeOverlay();
-    renderInfPatientList();
+    savePatient(p).then(() => {
+        showNotification('Constantes et observations enregistrées ✓', 'success');
+        closeOverlay();
+        if (DB_MODE === 'local') renderInfPatientList();
+    });
 }
 
 // Surcharge de renderInfPatientList pour ajouter le bouton constantes
@@ -4260,32 +4468,43 @@ function renderInfPatientList() {
     if (!container) return;
     const q = (document.getElementById('infPatientSearch')||{value:''}).value.toLowerCase();
     const filtered = PATIENTS.filter(p => `${p.nom} ${p.prenom} ${p.chambre}`.toLowerCase().includes(q));
-    if (!filtered.length) { container.innerHTML = '<div class="muted small" style="padding:20px;text-align:center">Aucun patient</div>'; return; }
+    if (!filtered.length) {
+        container.innerHTML = '<div class="muted small" style="padding:20px;text-align:center">Aucun patient trouvé</div>';
+        return;
+    }
     container.innerHTML = filtered.map(p => {
-        const allergyWarn = p.allergies.length ? `<div style="color:#d94b4b;font-size:12px;margin-top:3px">⚠️ Allergies: ${p.allergies.join(', ')}</div>` : '';
-        const obsCount = (p.observationsInfirmier||[]).length;
-        const lastObs = obsCount > 0 ? p.observationsInfirmier[p.observationsInfirmier.length-1] : null;
+        const id = p.id;
+        const allergyWarn = p.allergies && p.allergies.length
+            ? `<div style="color:#d94b4b;font-size:12px;margin-top:3px">⚠️ Allergies: ${p.allergies.join(', ')}</div>` : '';
+        const obsCount = (p.observationsInfirmier || []).length;
+        const lastObs = obsCount > 0 ? p.observationsInfirmier[p.observationsInfirmier.length - 1] : null;
+        const c = p.constantes || {};
         return `
-        <div class="patient-card">
+        <div class="patient-card" style="cursor:default">
             <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">
-                <div style="flex:1;min-width:0" onclick="openPatientDetail(${p.id})" style="cursor:pointer">
-                    <div style="font-weight:700;font-size:15px;cursor:pointer" onclick="openPatientDetail(${p.id})">${p.prenom} ${p.nom}
+                <!-- Infos patient — cliquable pour ouvrir la fiche -->
+                <div style="flex:1;min-width:180px;cursor:pointer" onclick="openPatientDetail('${id}')">
+                    <div style="font-weight:700;font-size:15px">${p.prenom} ${p.nom}
                         <span class="small muted">· ${p.age} ans · Ch. ${p.chambre||'—'}</span>
                     </div>
-                    <div class="small">Groupe ${p.groupe}${p.antecedents.length ? ' · '+p.antecedents.slice(0,2).join(', ') : ''}</div>
+                    <div class="small">Groupe ${p.groupe||'—'}${p.antecedents && p.antecedents.length ? ' · ' + p.antecedents.slice(0,2).join(', ') : ''}</div>
                     ${allergyWarn}
-                    ${lastObs ? `<div class="comment-bubble inf" style="margin-top:6px;font-size:12px">💉 Dernière obs: ${lastObs.texte.substring(0,80)}${lastObs.texte.length>80?'...':''}</div>` : ''}
+                    ${lastObs ? `<div class="comment-bubble inf" style="margin-top:6px;font-size:12px">💉 ${lastObs.texte.substring(0,90)}${lastObs.texte.length>90?'...':''}</div>` : ''}
                 </div>
-                <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end">
-                    <div class="constante-grid" style="grid-template-columns:1fr 1fr 1fr;gap:5px;width:210px">
-                        <div class="constante-item" style="padding:5px"><div class="val" style="font-size:13px">${p.constantes.tension||'—'}</div><div class="lbl">TA</div></div>
-                        <div class="constante-item" style="padding:5px"><div class="val" style="font-size:13px">${p.constantes.pouls||'—'}</div><div class="lbl">Pouls</div></div>
-                        <div class="constante-item" style="padding:5px"><div class="val" style="font-size:13px">${p.constantes.spo2||'—'}%</div><div class="lbl">SpO₂</div></div>
-                        <div class="constante-item" style="padding:5px"><div class="val" style="font-size:13px">${p.constantes.temp||'—'}°</div><div class="lbl">T°</div></div>
-                        <div class="constante-item" style="padding:5px"><div class="val" style="font-size:13px">${p.constantes.douleur||'0'}/10</div><div class="lbl">Douleur</div></div>
+                <!-- Constantes + boutons -->
+                <div style="display:flex;flex-direction:column;gap:8px;align-items:flex-end;min-width:200px">
+                    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:5px;width:210px">
+                        <div class="constante-item" style="padding:5px"><div class="val" style="font-size:13px">${c.tension||'—'}</div><div class="lbl">TA</div></div>
+                        <div class="constante-item" style="padding:5px"><div class="val" style="font-size:13px">${c.pouls||'—'}</div><div class="lbl">♥</div></div>
+                        <div class="constante-item" style="padding:5px"><div class="val" style="font-size:13px">${c.spo2||'—'}%</div><div class="lbl">SpO₂</div></div>
+                        <div class="constante-item" style="padding:5px"><div class="val" style="font-size:13px">${c.temp||'—'}°</div><div class="lbl">T°</div></div>
+                        <div class="constante-item" style="padding:5px"><div class="val" style="font-size:13px">${c.douleur||'0'}/10</div><div class="lbl">Douleur</div></div>
                         <div class="constante-item" style="padding:5px"><div class="val" style="font-size:13px">${obsCount}</div><div class="lbl">Obs.</div></div>
                     </div>
-                    <button class="btn" style="width:100%;font-size:12px;padding:6px 10px" onclick="openInfirmierConstantes(${p.id})">📊 Constantes & Obs.</button>
+                    <div style="display:flex;gap:6px;width:210px">
+                        <button class="ghost" style="flex:1;font-size:12px;padding:6px 8px" onclick="openPatientDetail('${id}')">📋 Fiche</button>
+                        <button class="btn" style="flex:1;font-size:12px;padding:6px 8px" onclick="openInfirmierConstantes('${id}')">📊 Constantes</button>
+                    </div>
                 </div>
             </div>
         </div>`;
