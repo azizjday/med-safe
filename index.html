@@ -1898,10 +1898,326 @@ function escapeForJs(s) {
     return String(s||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'\\"').replace(/\n/g,'\\n'); 
 }
 
-function svgThumb(text, subtitle='Boîte') { 
-    const t=escapeHtml(text), s=escapeHtml(subtitle); 
-    const svg=`<svg xmlns='http://www.w3.org/2000/svg' width='320' height='200' viewBox='0 0 320 200'><rect rx='12' width='100%' height='100%' fill='%23f0f4ff'/><text x='50%' y='48%' dominant-baseline='middle' text-anchor='middle' fill='%230b3d91' font-family='Arial' font-size='20' font-weight='700'>${t}</text><text x='50%' y='72%' dominant-baseline='middle' text-anchor='middle' fill='%23666' font-family='Arial' font-size='12'>${s}</text></svg>`; 
-    return 'data:image/svg+xml;utf8,'+encodeURIComponent(svg); 
+// ===========================================
+// SYSTÈME D'IMAGES MÉDICAMENTS — AUTO-SEARCH
+// Recherche automatique via Claude API + cache
+// ===========================================
+
+// Cache des images : { medId: { url, ts } }
+const IMG_CACHE_KEY = 'vigi_img_cache';
+let _imgCache = (() => { try { return JSON.parse(localStorage.getItem(IMG_CACHE_KEY) || '{}'); } catch(e) { return {}; } })();
+const IMG_CACHE_TTL = 7 * 24 * 3600 * 1000; // 7 jours
+const _imgLoading = new Set(); // IDs en cours de chargement
+
+function saveImgCache() {
+    localStorage.setItem(IMG_CACHE_KEY, JSON.stringify(_imgCache));
+}
+
+// Génère un placeholder SVG avec le nom du médicament
+function svgThumb(text, subtitle) {
+    subtitle = subtitle || 'Médicament';
+    var t = String(text||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    var s = String(subtitle||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    var svg = '<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'320\' height=\'200\' viewBox=\'0 0 320 200\'>'
+        + '<rect rx=\'12\' width=\'100%\' height=\'100%\' fill=\'%23f0f4ff\'/>'
+        + '<text x=\'50%\' y=\'45%\' dominant-baseline=\'middle\' text-anchor=\'middle\' fill=\'%230b3d91\' font-family=\'Arial\' font-size=\'18\' font-weight=\'700\'>' + t + '</text>'
+        + '<text x=\'50%\' y=\'68%\' dominant-baseline=\'middle\' text-anchor=\'middle\' fill=\'%23888\' font-family=\'Arial\' font-size=\'12\'>' + s + '</text>'
+        + '</svg>';
+    return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
+}
+
+// Récupère l'URL d'image d'un médicament (cache → manuelle → auto)
+function getMedImageUrl(med) {
+    // 1. Image manuelle définie par l'admin
+    if (med.image) return med.image;
+    // 2. Cache auto valide
+    const cached = _imgCache[med.id];
+    if (cached && (Date.now() - cached.ts) < IMG_CACHE_TTL && cached.url) return cached.url;
+    return null;
+}
+
+// Génère le HTML <img> avec chargement asynchrone si pas encore en cache
+function medImg(med, w = 96, h = 64) {
+    const url = getMedImageUrl(med);
+    const placeholder = svgThumb(med.name, med.brand);
+    const imgId = `medimg_${med.id}`;
+
+    if (url) {
+        // Image disponible immédiatement
+        return `<img id="${imgId}" src="${url}" style="width:${w}px;height:${h}px;object-fit:cover;border-radius:8px;background:#f0f4ff;border:1px solid #e6e9ef;flex-shrink:0;transition:opacity .3s" alt="${escapeHtml(med.name)}" onerror="this.src='${placeholder}';this.onerror=null">`;
+    }
+
+    // Placeholder pendant le chargement + lancement auto en arrière-plan
+    if (!_imgLoading.has(med.id)) {
+        _imgLoading.add(med.id);
+        _autoFetchMedImage(med);
+    }
+
+    return `<img id="${imgId}" src="${placeholder}" style="width:${w}px;height:${h}px;object-fit:cover;border-radius:8px;background:#f0f4ff;border:1px solid #e6e9ef;flex-shrink:0;opacity:.7" alt="${escapeHtml(med.name)}" data-medid="${med.id}">`;
+}
+
+// Recherche automatique d'image via Claude API (web search)
+async function _autoFetchMedImage(med) {
+    try {
+        const searchQuery = `${med.name} ${med.brand} boîte médicament photo`;
+        const response = await fetch('https://api.anthropic.com/v1/messages', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                model: 'claude-sonnet-4-20250514',
+                max_tokens: 300,
+                tools: [{ type: 'web_search_20250305', name: 'web_search' }],
+                messages: [{
+                    role: 'user',
+                    content: `Trouve une URL d'image directe (JPG/PNG/WEBP) d'une photo réelle de la boîte du médicament "${med.name}" (marque: ${med.brand}, principe actif: ${med.active}). Recherche sur des sites médicaux, pharmacies en ligne, ou bases de données médicaments. Réponds UNIQUEMENT avec l'URL directe de l'image, rien d'autre. L'URL doit se terminer par .jpg, .jpeg, .png ou .webp ou contenir "image" dans le chemin.`
+                }]
+            })
+        });
+
+        if (!response.ok) throw new Error('API error ' + response.status);
+        const data = await response.json();
+        const text = data.content.filter(b => b.type === 'text').map(b => b.text).join('').trim();
+
+        // Extraire l'URL de la réponse
+        const urlMatch = text.match(/https?:\/\/[^\s"'<>]+\.(jpg|jpeg|png|webp)([^\s"'<>]*)?/i)
+            || text.match(/https?:\/\/[^\s"'<>]{10,}/);
+        const imgUrl = urlMatch ? urlMatch[0].split(/[\s"']/, 1)[0] : null;
+
+        if (imgUrl) {
+            // Vérifier que l'URL charge bien
+            await _verifyImageUrl(imgUrl);
+            _imgCache[med.id] = { url: imgUrl, ts: Date.now(), query: searchQuery };
+            saveImgCache();
+            _updateMedImgInDOM(med.id, imgUrl, med.name, med.brand);
+        }
+    } catch(e) {
+        // Fallback : chercher sur des CDNs pharmaceutiques publics connus
+        _tryFallbackImage(med);
+    } finally {
+        _imgLoading.delete(med.id);
+    }
+}
+
+// Fallback : construire des URLs plausibles depuis des sources pharmaceutiques
+async function _tryFallbackImage(med) {
+    const brandSlug = med.brand.toLowerCase().replace(/[^a-z0-9]/g, '-');
+    const nameSlug = med.name.toLowerCase().replace(/[^a-z0-9]/g, '-');
+
+    // Sources publiques fiables (ordre de priorité)
+    const candidates = [
+        `https://www.vidal.fr/images/medicaments/${brandSlug}.jpg`,
+        `https://www.medicaments.be/images/produits/${brandSlug}_boite.jpg`,
+        `https://www.eurekasante.fr/media/medicament/${nameSlug}.jpg`,
+        // Open Food Facts / Open Drug Facts
+        `https://images.openfoodfacts.org/images/products/${brandSlug}/front.jpg`,
+    ];
+
+    for (const url of candidates) {
+        try {
+            await _verifyImageUrl(url);
+            _imgCache[med.id] = { url, ts: Date.now() };
+            saveImgCache();
+            _updateMedImgInDOM(med.id, url, med.name, med.brand);
+            return;
+        } catch(e) { /* essayer le suivant */ }
+    }
+}
+
+// Vérifier qu'une URL image charge bien (HEAD request ou Image load)
+function _verifyImageUrl(url) {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        const timer = setTimeout(() => { img.src = ''; reject(new Error('timeout')); }, 5000);
+        img.onload = () => { clearTimeout(timer); resolve(url); };
+        img.onerror = () => { clearTimeout(timer); reject(new Error('load failed')); };
+        img.src = url;
+    });
+}
+
+// Mettre à jour les images dans le DOM dès qu'elles arrivent
+function _updateMedImgInDOM(medId, url, name, brand) {
+    const placeholder = svgThumb(name, brand);
+    document.querySelectorAll(`img[data-medid="${medId}"], #medimg_${medId}`).forEach(img => {
+        img.style.opacity = '0';
+        img.src = url;
+        img.onerror = function() { this.src = placeholder; this.onerror = null; };
+        img.onload = function() {
+            this.style.transition = 'opacity .4s';
+            this.style.opacity = '1';
+            this.removeAttribute('data-medid');
+        };
+    });
+}
+
+// Pré-charger les images des médicaments visibles (appelé au démarrage)
+async function preloadVisibleMedImages() {
+    // Charger en priorité les médicaments haut risque (5 premiers affichés)
+    const priority = MEDS.filter(m => m.risk === 'high').slice(0, 10)
+        .concat(MEDS.filter(m => m.risk === 'lasa').slice(0, 10));
+
+    for (const med of priority) {
+        if (!getMedImageUrl(med) && !_imgLoading.has(med.id)) {
+            _imgLoading.add(med.id);
+            // Étaler les requêtes pour ne pas surcharger l'API
+            await new Promise(r => setTimeout(r, 800));
+            _autoFetchMedImage(med);
+        }
+    }
+}
+
+// Recherche manuelle déclenchée par l'utilisateur
+async function searchMedImageManually(medId) {
+    const med = MEDS.find(m => m.id === medId);
+    if (!med) return;
+
+    const btn = document.getElementById(`imgSearchBtn_${medId}`);
+    const status = document.getElementById(`imgSearchStatus_${medId}`);
+    if (btn) { btn.disabled = true; btn.textContent = '🔍 Recherche...'; }
+    if (status) status.textContent = 'Recherche en cours...';
+
+    // Forcer le rechargement (ignorer le cache)
+    delete _imgCache[medId];
+    _imgLoading.delete(medId);
+
+    try {
+        await _autoFetchMedImage(med);
+        const url = getMedImageUrl(med);
+        if (url) {
+            const preview = document.getElementById('imgPreview');
+            if (preview) { preview.src = url; preview.style.opacity = '1'; }
+            if (status) status.innerHTML = '<span style="color:#0a6a2a">✓ Image trouvée !</span>';
+        } else {
+            if (status) status.innerHTML = '<span style="color:#d94b4b">Aucune image trouvée</span>';
+        }
+    } catch(e) {
+        if (status) status.innerHTML = '<span style="color:#d94b4b">Erreur de recherche</span>';
+    } finally {
+        if (btn) { btn.disabled = false; btn.textContent = '🔍 Rechercher auto'; }
+    }
+}
+
+// Gestionnaire d'image amélioré (overlay)
+function openMedImageManager(medId) {
+    const med = MEDS.find(m => m.id === medId);
+    if (!med) return;
+    const currentUrl = getMedImageUrl(med);
+    const placeholder = svgThumb(med.name, med.brand);
+
+    const html = `
+        <div style="min-width:360px;max-width:500px">
+            <h3 style="margin:0 0 4px">🖼️ Image — ${escapeHtml(med.name)}</h3>
+            <div class="small muted" style="margin-bottom:16px">${escapeHtml(med.brand)} · ${escapeHtml(med.active)}</div>
+
+            <!-- Aperçu -->
+            <div style="text-align:center;margin-bottom:16px;position:relative">
+                <img id="imgPreview" src="${currentUrl || placeholder}"
+                    style="width:220px;height:145px;object-fit:cover;border-radius:10px;border:2px solid #e6e9ef;background:#f0f4ff;transition:opacity .3s"
+                    onerror="this.src='${placeholder}';this.onerror=null">
+                <div class="small muted" style="margin-top:6px" id="imgSearchStatus_${medId}">
+                    ${currentUrl ? '✓ Image disponible' : 'Aucune image — placeholder SVG'}
+                </div>
+            </div>
+
+            <!-- Recherche automatique -->
+            <div style="background:#eef5ff;border-radius:10px;padding:14px;margin-bottom:12px">
+                <div style="font-weight:600;margin-bottom:8px">🤖 Recherche automatique</div>
+                <div class="small muted" style="margin-bottom:10px">Claude recherche une photo réelle de la boîte sur Internet</div>
+                <button id="imgSearchBtn_${medId}" class="btn" style="width:100%" onclick="searchMedImageManually(${medId})">
+                    🔍 Rechercher automatiquement
+                </button>
+            </div>
+
+            <!-- Upload fichier -->
+            <div style="border:2px dashed #bcd4f6;border-radius:10px;padding:14px;text-align:center;margin-bottom:12px;cursor:pointer;transition:background .2s"
+                onmouseover="this.style.background='#f0f7ff'" onmouseout="this.style.background=''"
+                onclick="document.getElementById('imgFileInput').click()">
+                <div style="font-size:24px;margin-bottom:4px">📁</div>
+                <div style="font-weight:600;color:#0B3D91;font-size:14px">Uploader une photo</div>
+                <div class="small muted">JPG, PNG, WEBP — max 3 Mo</div>
+                <input type="file" id="imgFileInput" accept="image/*" style="display:none" onchange="previewMedImage(this)">
+            </div>
+
+            <!-- URL manuelle -->
+            <div style="margin-bottom:16px">
+                <label class="small">Ou coller une URL d'image :</label>
+                <div style="display:flex;gap:8px;margin-top:4px">
+                    <input type="url" id="imgUrlInput" placeholder="https://..." value="${currentUrl && currentUrl.startsWith('http') ? currentUrl : ''}" style="flex:1;padding:8px 10px;border-radius:8px;border:1px solid #e6e9ef;font-size:13px">
+                    <button class="ghost" onclick="previewMedImageUrl()">Aperçu</button>
+                </div>
+            </div>
+
+            <!-- Actions -->
+            <div style="display:flex;gap:8px;justify-content:space-between;flex-wrap:wrap">
+                <button class="ghost" style="color:#d94b4b" onclick="removeMedImage(${medId})">🗑️ Supprimer</button>
+                <div style="display:flex;gap:8px">
+                    <button class="ghost" onclick="closeOverlay()">Annuler</button>
+                    <button class="btn" onclick="saveMedImage(${medId})">💾 Enregistrer</button>
+                </div>
+            </div>
+        </div>`;
+    window._pendingMedImage = null;
+    showOverlay(html);
+}
+
+function previewMedImage(input) {
+    const file = input.files[0];
+    if (!file) return;
+    if (file.size > 3 * 1024 * 1024) { showNotification('Image trop lourde (max 3 Mo)', 'warning'); return; }
+    const reader = new FileReader();
+    reader.onload = e => {
+        const preview = document.getElementById('imgPreview');
+        if (preview) { preview.src = e.target.result; preview.style.opacity = '1'; }
+        window._pendingMedImage = e.target.result;
+        const urlInput = document.getElementById('imgUrlInput');
+        if (urlInput) urlInput.value = '';
+    };
+    reader.readAsDataURL(file);
+}
+
+function previewMedImageUrl() {
+    const url = (document.getElementById('imgUrlInput') || {value:''}).value.trim();
+    if (!url) return;
+    const preview = document.getElementById('imgPreview');
+    if (preview) {
+        preview.style.opacity = '0.5';
+        const img = new Image();
+        img.onload = () => { preview.src = url; preview.style.opacity = '1'; window._pendingMedImage = url; };
+        img.onerror = () => { showNotification('URL invalide ou image inaccessible', 'warning'); preview.style.opacity = '1'; };
+        img.src = url;
+    }
+}
+
+function saveMedImage(medId) {
+    const med = MEDS.find(m => m.id === medId);
+    if (!med) return;
+    const url = (document.getElementById('imgUrlInput') || {value:''}).value.trim();
+    const pending = window._pendingMedImage;
+    const newImg = pending || url || '';
+    if (newImg) {
+        med.image = newImg;
+        // Aussi mettre en cache auto
+        _imgCache[medId] = { url: newImg, ts: Date.now(), manual: true };
+        saveImgCache();
+    }
+    window._pendingMedImage = null;
+    localStorage.setItem('vigi_meds', JSON.stringify(MEDS));
+    initFuse();
+    showNotification('Image enregistrée ✓', 'success');
+    closeOverlay();
+    renderLibrary(); renderAdminPanel(); renderMedList();
+}
+
+function removeMedImage(medId) {
+    const med = MEDS.find(m => m.id === medId);
+    if (!med) return;
+    med.image = '';
+    delete _imgCache[medId];
+    saveImgCache();
+    window._pendingMedImage = null;
+    localStorage.setItem('vigi_meds', JSON.stringify(MEDS));
+    showNotification('Image supprimée', 'info');
+    closeOverlay();
+    renderLibrary(); renderAdminPanel(); renderMedList();
 }
 
 // Notification system
@@ -2268,6 +2584,8 @@ function initApp() {
         } else {
             showSection('home');
         }
+        // Précharger les images en arrière-plan après 2 secondes
+        setTimeout(() => preloadVisibleMedImages(), 2000);
     });
 
     document.addEventListener('keydown', (e) => {
@@ -2371,7 +2689,7 @@ function doSearch() {
         html += `
             <div class="card" style="margin-bottom: 10px;">
                 <div style="display: flex; gap: 12px; align-items: center;">
-                    <img src="${svgThumb(med.name, med.brand)}" style="width: 80px; height: 60px; border-radius: 6px;" alt="${med.name}">
+                    ${medImg(med, 80, 60)}
                     <div>
                         <div style="font-weight: 700;">${med.name} <span style="color: #666; font-size: 13px;">(${med.brand})</span></div>
                         <div class="small">Principe actif: ${med.active}</div>
@@ -2394,162 +2712,126 @@ function doSearch() {
 function renderMedList() {
     const listDiv = document.getElementById('medList');
     const highRiskMeds = MEDS.filter(med => med.risk === 'high').slice(0, 5);
-    
-    let html = '';
-    highRiskMeds.forEach(med => {
-        html += `
-            <div class="med-item high">
-                <img src="${svgThumb(med.name, med.brand)}" alt="${med.name}">
-                <div style="flex: 1;">
-                    <div style="font-weight: 700;">${med.name} <span style="color: #666; font-size: 13px;">(${med.brand})</span></div>
-                    <div class="small">${med.active}</div>
-                    <div style="margin-top: 8px;">
-                        <button class="ghost" onclick="showDrug(${med.id})">Détails</button>
-                        <button class="btn" onclick="prefillReport('${med.name}')">Signaler</button>
-                    </div>
+    listDiv.innerHTML = highRiskMeds.map(med => `
+        <div class="med-item high" style="gap:12px;padding:12px">
+            <div style="position:relative;flex-shrink:0">
+                ${medImg(med, 100, 68)}
+                <button onclick="openMedImageManager(${med.id})" title="Modifier l'image"
+                    style="position:absolute;bottom:-5px;right:-5px;background:${getMedImageUrl(med)?'#0a6a2a':'#0B3D91'};color:#fff;border:none;border-radius:50%;width:20px;height:20px;font-size:10px;cursor:pointer;line-height:1">
+                    ${getMedImageUrl(med) ? '✓' : '🖼'}
+                </button>
+            </div>
+            <div style="flex:1">
+                <div style="font-weight:700">${med.name} <span style="color:#666;font-size:13px">(${med.brand})</span></div>
+                <div class="small">${med.active}</div>
+                ${med.dosage ? `<div class="small" style="color:#888">${med.dosage}</div>` : ''}
+                <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
+                    <button class="ghost" style="font-size:12px;padding:5px 8px" onclick="showDrug(${med.id})">Détails</button>
+                    <button class="btn" style="font-size:12px;padding:5px 8px" onclick="prefillReport('${med.name}')">Signaler</button>
                 </div>
             </div>
-        `;
-    });
-    
-    listDiv.innerHTML = html;
+        </div>`).join('');
 }
 
 // Bibliothèque de médicaments
 function renderLibrary() {
     const highContainer = document.getElementById('library-high');
     const lasaContainer = document.getElementById('library-lasa');
-    
     const highMeds = MEDS.filter(med => med.risk === 'high');
     const lasaMeds = MEDS.filter(med => med.risk === 'lasa');
-    
-    highContainer.innerHTML = highMeds.map(med => `
-        <div class="med-item">
-            <img src="${svgThumb(med.name, med.brand)}" style="width: 60px; height: 40px;" alt="${med.name}">
-            <div style="flex: 1;">
-                <div style="font-weight: 700;">${med.name} <span style="color: #666; font-size: 12px;">(${med.brand})</span></div>
-                <div class="small">${med.active}</div>
-            </div>
-            <button class="ghost" onclick="showDrug(${med.id})">Fiche</button>
+    const itemHtml = _medLibraryCard;
+    highContainer.innerHTML = highMeds.map(itemHtml).join('');
+    lasaContainer.innerHTML = lasaMeds.map(itemHtml).join('');
+}
+
+function _medLibraryCard(med) {
+    const hasImg = !!getMedImageUrl(med);
+    return `
+    <div class="med-item" style="gap:10px;padding:10px;align-items:center">
+        <div style="position:relative;flex-shrink:0">
+            ${medImg(med, 72, 52)}
+            <button onclick="openMedImageManager(${med.id})" title="Gérer l'image"
+                style="position:absolute;bottom:-5px;right:-5px;background:${hasImg?'#0a6a2a':'#0B3D91'};color:#fff;border:none;border-radius:50%;width:20px;height:20px;font-size:10px;cursor:pointer;line-height:1">
+                ${hasImg ? '✓' : '🖼'}
+            </button>
         </div>
-    `).join('');
-    
-    lasaContainer.innerHTML = lasaMeds.map(med => `
-        <div class="med-item">
-            <img src="${svgThumb(med.name, med.brand)}" style="width: 60px; height: 40px;" alt="${med.name}">
-            <div style="flex: 1;">
-                <div style="font-weight: 700;">${med.name} <span style="color: #666; font-size: 12px;">(${med.brand})</span></div>
-                <div class="small">${med.active}</div>
-            </div>
-            <button class="ghost" onclick="showDrug(${med.id})">Fiche</button>
+        <div style="flex:1;min-width:0">
+            <div style="font-weight:700;font-size:13px">${med.name} <span style="color:#666;font-size:11px">(${med.brand})</span></div>
+            <div class="small" style="color:#888">${med.active}</div>
         </div>
-    `).join('');
+        <button class="ghost" style="font-size:12px;padding:5px 8px;white-space:nowrap" onclick="showDrug(${med.id})">Fiche</button>
+    </div>`;
 }
 
 function filtrerBiblio() {
     const filter = document.getElementById('libraryFilter').value.toLowerCase();
     const riskFilter = document.getElementById('libraryRiskFilter').value;
-    
     const highContainer = document.getElementById('library-high');
     const lasaContainer = document.getElementById('library-lasa');
-    
     let highMeds = MEDS.filter(med => med.risk === 'high');
     let lasaMeds = MEDS.filter(med => med.risk === 'lasa');
-    
     if (filter) {
-        highMeds = highMeds.filter(med => 
-            med.name.toLowerCase().includes(filter) || 
-            med.brand.toLowerCase().includes(filter) ||
-            med.active.toLowerCase().includes(filter)
-        );
-        lasaMeds = lasaMeds.filter(med => 
-            med.name.toLowerCase().includes(filter) || 
-            med.brand.toLowerCase().includes(filter) ||
-            med.active.toLowerCase().includes(filter)
-        );
+        highMeds = highMeds.filter(med => med.name.toLowerCase().includes(filter) || med.brand.toLowerCase().includes(filter) || med.active.toLowerCase().includes(filter));
+        lasaMeds = lasaMeds.filter(med => med.name.toLowerCase().includes(filter) || med.brand.toLowerCase().includes(filter) || med.active.toLowerCase().includes(filter));
     }
-    
-    // Mise à jour des titres
     document.getElementById('library-high-title').textContent = `Urgences & Haut Risque (${highMeds.length})`;
     document.getElementById('library-lasa-title').textContent = `LASA — Global (Autres) (${lasaMeds.length})`;
-    
-    // Affichage conditionnel basé sur le filtre de risque
-    if (riskFilter === 'high') {
-        highContainer.style.display = 'flex';
-        lasaContainer.style.display = 'none';
-    } else if (riskFilter === 'lasa') {
-        highContainer.style.display = 'none';
-        lasaContainer.style.display = 'flex';
-    } else {
-        highContainer.style.display = 'flex';
-        lasaContainer.style.display = 'flex';
-    }
-    
-    highContainer.innerHTML = highMeds.map(med => `
-        <div class="med-item">
-            <img src="${svgThumb(med.name, med.brand)}" style="width: 60px; height: 40px;" alt="${med.name}">
-            <div style="flex: 1;">
-                <div style="font-weight: 700;">${med.name} <span style="color: #666; font-size: 12px;">(${med.brand})</span></div>
-                <div class="small">${med.active}</div>
-            </div>
-            <button class="ghost" onclick="showDrug(${med.id})">Fiche</button>
-        </div>
-    `).join('');
-    
-    lasaContainer.innerHTML = lasaMeds.map(med => `
-        <div class="med-item">
-            <img src="${svgThumb(med.name, med.brand)}" style="width: 60px; height: 40px;" alt="${med.name}">
-            <div style="flex: 1;">
-                <div style="font-weight: 700;">${med.name} <span style="color: #666; font-size: 12px;">(${med.brand})</span></div>
-                <div class="small">${med.active}</div>
-            </div>
-            <button class="ghost" onclick="showDrug(${med.id})">Fiche</button>
-        </div>
-    `).join('');
+    if (riskFilter === 'high') { highContainer.style.display = 'flex'; lasaContainer.style.display = 'none'; }
+    else if (riskFilter === 'lasa') { highContainer.style.display = 'none'; lasaContainer.style.display = 'flex'; }
+    else { highContainer.style.display = 'flex'; lasaContainer.style.display = 'flex'; }
+    const itemHtml = _medLibraryCard;
+    highContainer.innerHTML = highMeds.map(itemHtml).join('');
+    lasaContainer.innerHTML = lasaMeds.map(itemHtml).join('');
 }
 
 // Affichage détaillé d'un médicament
 function showDrug(id) {
     const med = MEDS.find(m => m.id === id);
     if (!med) return;
-    
+    const isAdmin = currentUser && currentUser.role === 'admin';
     const html = `
         <div>
-            <h3>${med.name} (${med.brand})</h3>
-            <div class="small">Principe actif: ${med.active}</div>
-            ${med.risk === 'high' ? '<div class="lasawarning" style="margin-top: 8px;">⚠️ MÉDICAMENT HAUT RISQUE - Double vérification requise</div>' : ''}
-            
-            <div style="margin-top: 16px;">
-                <strong>Indications:</strong>
-                <p>${med.indications}</p>
+            <div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap">
+                <!-- Image grande -->
+                <div style="position:relative;flex-shrink:0">
+                    ${medImg(med, 160, 110)}
+                    ${isAdmin ? `<button onclick="closeOverlay();openMedImageManager(${med.id})" 
+                        style="position:absolute;bottom:4px;right:4px;background:rgba(11,61,145,0.85);color:#fff;border:none;border-radius:6px;padding:3px 8px;font-size:11px;cursor:pointer">
+                        🖼️ Modifier
+                    </button>` : ''}
+                </div>
+                <div style="flex:1;min-width:180px">
+                    <h3 style="margin:0">${med.name} <span style="font-weight:400;font-size:15px;color:#666">(${med.brand})</span></h3>
+                    <div class="small" style="margin-top:4px">Principe actif : <strong>${med.active}</strong></div>
+                    ${med.risk === 'high' ? '<div class="lasawarning" style="margin-top:8px;padding:6px 10px">⚠️ MÉDICAMENT HAUT RISQUE — Double vérification requise</div>' : ''}
+                    ${med.dosage ? `<div class="small" style="margin-top:6px">Dosage : ${med.dosage} · ${med.route||''}</div>` : ''}
+                </div>
             </div>
-            
-            ${med.dosage ? `
-            <div style="margin-top: 12px;">
-                <strong>Dosage:</strong>
-                <p>${med.dosage} (${med.route || 'Voie non spécifiée'})</p>
+
+            <div style="margin-top:14px">
+                <strong>Indications :</strong>
+                <p style="margin:4px 0">${med.indications}</p>
             </div>
-            ` : ''}
-            
-            <div style="margin-top: 12px;">
-                <strong>Risques LASA:</strong>
-                <p>${med.aliases.length > 0 ? 'Confusions possibles avec: ' + med.aliases.join(', ') : 'Aucun risque LASA identifié'}</p>
+
+            <div style="margin-top:10px">
+                <strong>Risques LASA :</strong>
+                <p style="margin:4px 0">${med.aliases.length > 0 ? 'Confusions possibles avec : ' + med.aliases.join(', ') : 'Aucun risque LASA identifié'}</p>
             </div>
-            
-            <div style="margin-top: 12px;">
-                <strong>Référence:</strong>
-                <p>${med.reference}</p>
+
+            <div style="margin-top:10px">
+                <strong>Référence :</strong>
+                <p style="margin:4px 0;font-size:13px;color:#666">${med.reference}</p>
             </div>
-            
-            <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px;">
-                <button class="ghost" onclick="closeOverlay()">Fermer</button>
-                <button class="btn" onclick="prefillReport('${med.name}'); closeOverlay();">Signaler</button>
-                ${currentUser && currentUser.role === 'admin' ? 
-                  `<button class="btn" onclick="openEditMed(${med.id}); closeOverlay();">Modifier</button>` : ''}
+
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:18px;flex-wrap:wrap">
+                ${isAdmin ? `<button class="ghost" style="font-size:13px" onclick="closeOverlay();openMedImageManager(${med.id})">🖼️ Gérer l'image</button>` : '<span></span>'}
+                <div style="display:flex;gap:8px">
+                    <button class="ghost" onclick="closeOverlay()">Fermer</button>
+                    <button class="btn" onclick="prefillReport('${med.name}');closeOverlay()">Signaler</button>
+                    ${isAdmin ? `<button class="btn" onclick="openEditMed(${med.id});closeOverlay()">Modifier</button>` : ''}
+                </div>
             </div>
-        </div>
-    `;
-    
+        </div>`;
     showOverlay(html);
 }
 
@@ -3022,16 +3304,21 @@ function renderAdminPanel() {
         new Date(lastUpdateTime).toLocaleString('fr-FR') : 'Jamais';
     
     medList.innerHTML = MEDS.map(med => `
-        <div class="med-item" style="margin-bottom: 8px;">
-            <div style="flex: 1;">
-                <div style="font-weight: 700;">${med.name} 
-                    <span class="badge" style="margin-left: 8px;">${med.risk === 'high' ? 'Haut Risque' : 'LASA'}</span>
+        <div class="med-item" style="margin-bottom:8px;gap:10px">
+            <div style="position:relative;flex-shrink:0">
+                ${medImg(med, 52, 36)}
+                ${med.image ? '' : '<div style="position:absolute;bottom:0;right:0;background:#f59e0b;border-radius:3px;width:8px;height:8px" title="Pas d\'image"></div>'}
+            </div>
+            <div style="flex:1;min-width:0">
+                <div style="font-weight:700;font-size:13px">${med.name}
+                    <span class="badge" style="margin-left:6px;font-size:10px">${med.risk === 'high' ? 'Haut Risque' : 'LASA'}</span>
                 </div>
                 <div class="small">${med.active}</div>
             </div>
-            <div style="display: flex; gap: 4px;">
-                <button class="ghost" onclick="openEditMed(${med.id})">Modifier</button>
-                <button class="ghost" onclick="deleteMed(${med.id})" style="color: #d94b4b;">Supprimer</button>
+            <div style="display:flex;gap:4px;flex-shrink:0">
+                <button class="ghost" style="font-size:12px;padding:5px 8px" onclick="openMedImageManager(${med.id})" title="Gérer l'image">🖼️</button>
+                <button class="ghost" style="font-size:12px;padding:5px 8px" onclick="openEditMed(${med.id})">Modifier</button>
+                <button class="ghost" style="font-size:12px;padding:5px 8px;color:#d94b4b" onclick="deleteMed(${med.id})">✕</button>
             </div>
         </div>
     `).join('');
@@ -4041,8 +4328,6 @@ function renderInfHistorique() {
 // SYSTÈME SOINS & BILANS — RENDU DYNAMIQUE
 // ===========================================
 
-let SOINS_PRESCRIPTIONS = JSON.parse(localStorage.getItem('vigi_soins') || '[]');
-function saveSoinsPrescriptions() { localStorage.setItem('vigi_soins', JSON.stringify(SOINS_PRESCRIPTIONS)); }
 
 const SOINS_CATALOGUE = {
     bilan: {
