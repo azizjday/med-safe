@@ -1384,6 +1384,16 @@ async function openCameraSearch() {
     loadTesseract().catch(() => {});
     if (!mlService.isModelAvailable()) mlService.loadModel().catch(() => {});
 
+    // Détecter si caméra sera disponible
+    const isFileProtocol  = location.protocol === 'file:';
+    const cameraAvailable = !isFileProtocol && !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+    const cameraWarning   = isFileProtocol
+        ? `<div style="background:#fffbeb;border:1px solid #f59e0b;border-radius:8px;padding:10px;margin-bottom:10px">
+            <strong style="color:#92400e">⚠ Mode fichier local — caméra désactivée</strong><br>
+            <span class="small" style="color:#78350f">Utilisez <strong>📂 Importer photo</strong> pour analyser une image.</span>
+           </div>`
+        : '';
+
     showOverlay(`
         <div style="max-width:520px">
             <h3 style="margin:0 0 10px">📷 Reconnaissance Image Médicament</h3>
@@ -1393,8 +1403,11 @@ async function openCameraSearch() {
                 <span class="small" style="padding:3px 10px;background:#fffbeb;border-radius:20px;color:#92400e">✏️ Saisie manuelle</span>
             </div>
 
+            ${cameraWarning}
+
             <div style="position:relative;background:#1a1a1a;border-radius:10px;overflow:hidden;
-                        min-height:220px;display:flex;align-items:center;justify-content:center;margin-bottom:10px">
+                        min-height:${isFileProtocol ? '80' : '220'}px;display:flex;align-items:center;justify-content:center;margin-bottom:10px;
+                        ${isFileProtocol ? 'display:none' : ''}">
                 <video id="cameraVideo" autoplay playsinline muted
                     style="width:100%;max-height:300px;display:none;border-radius:10px"></video>
                 <canvas id="cameraCanvas"
@@ -1405,12 +1418,13 @@ async function openCameraSearch() {
                     <div class="small muted" style="margin-top:6px">Cadrez l'étiquette avec le nom bien visible</div>
                 </div>
             </div>
+            ${isFileProtocol ? '<canvas id="cameraCanvas" style="display:none"></canvas>' : ''}
 
             <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
                 <button class="btn" style="flex:1" onclick="startCamera()">📷 Activer caméra</button>
                 <button class="ghost" id="captureBtn" onclick="captureImage()" style="flex:1;display:none">📸 Capturer</button>
                 <button class="ghost" id="retakeBtn"  onclick="retakePhoto()"  style="flex:1;display:none">🔄 Reprendre</button>
-                <label class="ghost" style="flex:1;cursor:pointer;text-align:center;margin:0;padding:8px 14px">
+                <label class="btn" style="flex:1;cursor:pointer;text-align:center;margin:0;padding:8px 14px;background:#0a6a2a">
                     📂 Importer photo
                     <input type="file" accept="image/*" onchange="handleFileUpload(event)" style="display:none">
                 </label>
@@ -1423,7 +1437,7 @@ async function openCameraSearch() {
             </div>
 
             <div id="cameraStatus" style="min-height:44px" role="status" aria-live="polite">
-                <div class="small muted" style="text-align:center;padding:10px">
+                <div class="small muted" style="text-align:center;padding:10px" id="cameraInitHint">
                     💡 Astuce : la reconnaissance texte (OCR) lit directement "Doliprane", "Morphine", etc.
                 </div>
             </div>
@@ -1438,15 +1452,101 @@ async function startCamera() {
     const video       = document.getElementById('cameraVideo');
     const placeholder = document.getElementById('cameraPlaceholder');
     const captureBtn  = document.getElementById('captureBtn');
+    const statusEl    = document.getElementById('cameraStatus');
     if (!video) return;
+
+    // Vérifier si on est sur file:// (caméra bloquée par le navigateur)
+    if (location.protocol === 'file:') {
+        if (statusEl) statusEl.innerHTML = `
+            <div style="background:#fffbeb;border:1px solid #f59e0b;border-radius:8px;padding:12px">
+                <div style="font-weight:700;color:#92400e;margin-bottom:8px">⚠️ Caméra non disponible en mode fichier local</div>
+                <div class="small" style="color:#78350f;margin-bottom:10px">
+                    Le navigateur bloque l'accès à la caméra sur les URL <code>file://</code> pour des raisons de sécurité.
+                </div>
+                <div style="font-weight:600;font-size:13px;margin-bottom:6px">Solutions :</div>
+                <div style="display:flex;flex-direction:column;gap:6px">
+                    <div style="background:#fff;border:1px solid #e6e9ef;border-radius:8px;padding:10px">
+                        <div style="font-weight:600;font-size:13px">✅ Option 1 — Importer une photo (recommandé)</div>
+                        <div class="small muted" style="margin-top:3px">Cliquez "Importer photo" ci-dessus pour analyser une image depuis votre appareil</div>
+                    </div>
+                    <div style="background:#fff;border:1px solid #e6e9ef;border-radius:8px;padding:10px">
+                        <div style="font-weight:600;font-size:13px">🌐 Option 2 — Ouvrir via un serveur local</div>
+                        <div class="small muted" style="margin-top:3px">
+                            WAMP : <code>http://localhost/medsafe/</code><br>
+                            Python : <code>python -m http.server 8080</code> → <code>http://localhost:8080</code>
+                        </div>
+                    </div>
+                    <div style="background:#fff;border:1px solid #e6e9ef;border-radius:8px;padding:10px">
+                        <div style="font-weight:600;font-size:13px">🔧 Option 3 — Chrome avec flag (développement)</div>
+                        <div class="small muted" style="margin-top:3px">
+                            Lancer Chrome avec : <code style="font-size:11px">--allow-file-access-from-files --use-fake-ui-for-media-stream</code>
+                        </div>
+                    </div>
+                </div>
+            </div>`;
+        return;
+    }
+
+    // Vérifier si getUserMedia est disponible
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        if (statusEl) statusEl.innerHTML = `
+            <div class="lasawarning">
+                <strong>⚠ Caméra non supportée</strong><br>
+                Votre navigateur ne supporte pas l'accès caméra.<br>
+                Utilisez <strong>Importer photo</strong> à la place.
+            </div>`;
+        return;
+    }
+
     try {
-        cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+        // Essayer d'abord la caméra arrière (mobile), puis n'importe laquelle
+        try {
+            cameraStream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
+            });
+        } catch(e) {
+            cameraStream = await navigator.mediaDevices.getUserMedia({ video: true });
+        }
+
         video.srcObject = cameraStream;
         video.style.display = 'block';
         if (placeholder) placeholder.style.display = 'none';
         if (captureBtn)  captureBtn.style.display  = 'block';
+        if (statusEl) statusEl.innerHTML = '<div class="small muted" style="text-align:center;padding:8px">📷 Caméra active — cadrez bien l\'étiquette du médicament, puis capturez.</div>';
+
     } catch(e) {
-        showNotification('Caméra non disponible — utilisez "Importer photo"', 'warning');
+        console.warn('[startCamera]', e.name, e.message);
+
+        let msg = '';
+        if (e.name === 'NotAllowedError' || e.name === 'PermissionDeniedError') {
+            msg = `
+                <div style="font-weight:700;margin-bottom:6px">🔒 Permission caméra refusée</div>
+                <div class="small" style="margin-bottom:10px">Pour autoriser :</div>
+                <ul class="small" style="margin:0 0 10px;padding-left:18px">
+                    <li>Cliquez sur l'icône 🔒 ou 📷 dans la barre d'adresse</li>
+                    <li>Autorisez l'accès à la caméra pour ce site</li>
+                    <li>Rechargez la page et réessayez</li>
+                </ul>
+                <div style="font-weight:600;font-size:13px">Ou utilisez directement :</div>`;
+        } else if (e.name === 'NotFoundError' || e.name === 'DevicesNotFoundError') {
+            msg = `<div style="font-weight:700;margin-bottom:6px">📷 Aucune caméra détectée</div>
+                   <div class="small" style="margin-bottom:10px">Aucun appareil photo trouvé sur cet appareil.</div>`;
+        } else if (e.name === 'NotReadableError') {
+            msg = `<div style="font-weight:700;margin-bottom:6px">⚠ Caméra occupée</div>
+                   <div class="small" style="margin-bottom:10px">La caméra est déjà utilisée par une autre application.</div>`;
+        } else {
+            msg = `<div style="font-weight:700;margin-bottom:6px">⚠ Caméra non disponible</div>
+                   <div class="small" style="margin-bottom:10px">${e.message}</div>`;
+        }
+
+        if (statusEl) statusEl.innerHTML = `
+            <div style="background:#fff5f5;border:1px solid #fed7d7;border-radius:8px;padding:12px">
+                ${msg}
+                <div style="margin-top:10px;padding:10px;background:#fff;border:1px solid #e6e9ef;border-radius:8px">
+                    <div style="font-weight:600;font-size:13px;margin-bottom:4px">✅ Alternative : Importer une photo</div>
+                    <div class="small muted">Utilisez le bouton "📂 Importer photo" pour analyser une image depuis votre galerie ou dossier.</div>
+                </div>
+            </div>`;
     }
 }
 
@@ -4259,11 +4359,13 @@ function renderOrdoMedList() {
         return;
     }
     container.innerHTML = ordoMedItems.map((item, i) => `
-        <div class="ordo-med-tag">
+        <div class="ordo-med-tag" style="border-left:3px solid ${item.risk === 'high' ? '#d94b4b' : item.risk === 'lasa' ? '#f59e0b' : '#bcd4f6'}">
             <div style="flex:1">
                 <div style="font-weight:700">${item.nom} <span class="small">${item.marque ? '('+item.marque+')' : ''}</span>
-                    ${item.risk === 'high' ? '<span class="lasa-flag">⚠️</span>' : ''}
+                    ${item.risk === 'high' ? '<span class="lasa-flag" style="margin-left:6px">⚠️ HAUT RISQUE</span>' : ''}
+                    ${item.risk === 'lasa' ? '<span style="margin-left:6px;color:#f59e0b;font-weight:700;font-size:12px">🔄 LASA</span>' : ''}
                 </div>
+                ${item.risk === 'lasa' ? `<div style="font-size:11px;color:#92400e;background:#fffbeb;padding:2px 6px;border-radius:4px;margin:3px 0;display:inline-block">Médicament LASA — vérifier le nom et le dosage</div>` : ''}
                 <div style="display:flex;gap:8px;margin-top:4px;flex-wrap:wrap">
                     <input type="text" placeholder="Posologie (ex: 1g)" value="${item.posologie}" oninput="ordoMedItems[${i}].posologie=this.value" style="width:120px;padding:4px 8px;border-radius:6px;border:1px solid #e6e9ef;font-size:12px"/>
                     <input type="text" placeholder="Voie (PO/IV/IM)" value="${item.voie}" oninput="ordoMedItems[${i}].voie=this.value" style="width:110px;padding:4px 8px;border-radius:6px;border:1px solid #e6e9ef;font-size:12px"/>
@@ -4342,10 +4444,12 @@ function renderOrdonnancesSuivi() {
             </div>
             <div style="margin-top:10px">
                 <div class="small" style="font-weight:600;margin-bottom:6px">Médicaments:</div>
+                ${o.medicaments.some(m => m.risk === 'lasa') ? `<div style="background:#fffbeb;border:1px solid #f59e0b;border-radius:6px;padding:6px 10px;margin-bottom:6px;font-size:12px;color:#92400e"><strong>🔄 Cette ordonnance contient un ou plusieurs médicaments LASA — vérification du nom et dosage recommandée</strong></div>` : ''}
                 ${o.medicaments.map(m => `
-                    <div class="ordo-med-tag" style="margin-bottom:4px">
+                    <div class="ordo-med-tag" style="margin-bottom:4px;border-left:3px solid ${m.risk === 'high' ? '#d94b4b' : m.risk === 'lasa' ? '#f59e0b' : '#bcd4f6'}">
                         <span style="flex:1"><strong>${m.nom}</strong> — ${m.posologie||'—'} · ${m.voie||'—'} · ${m.duree||'—'}</span>
-                        ${m.risk === 'high' ? '<span class="lasa-flag">⚠️</span>' : ''}
+                        ${m.risk === 'high' ? '<span class="lasa-flag">⚠️ Haut Risque</span>' : ''}
+                        ${m.risk === 'lasa' ? '<span style="color:#f59e0b;font-weight:700;font-size:12px;white-space:nowrap">🔄 LASA</span>' : ''}
                     </div>`).join('')}
             </div>
             ${o.notes ? `<div class="small muted" style="margin-top:8px">Notes: ${o.notes}</div>` : ''}
@@ -4404,14 +4508,16 @@ function renderInfirmierOrdonnances() {
             </div>` : ''}
             <div style="margin-top:10px">
                 <div class="small" style="font-weight:600;margin-bottom:6px">Médicaments à administrer:</div>
+                ${o.medicaments.some(m => m.risk === 'lasa') ? `<div style="background:#fffbeb;border:1px solid #f59e0b;border-radius:6px;padding:8px 12px;margin-bottom:8px;font-size:13px;color:#92400e"><strong>🔄 LASA — </strong> Cette ordonnance contient des médicaments à risque de confusion. Vérifiez attentivement le nom, le dosage et la forme avant administration.</div>` : ''}
                 ${o.medicaments.map(m => `
-                    <div class="ordo-med-tag" style="margin-bottom:4px">
+                    <div class="ordo-med-tag" style="margin-bottom:4px;border-left:3px solid ${m.risk === 'high' ? '#d94b4b' : m.risk === 'lasa' ? '#f59e0b' : '#bcd4f6'}">
                         <span style="flex:1">
                             <strong>${m.nom}</strong>${m.marque ? ' ('+m.marque+')' : ''} — 
                             <span style="color:#0B3D91">${m.posologie||'posologie non spécifiée'}</span> · 
                             ${m.voie||''} · ${m.duree||''}
                         </span>
                         ${m.risk === 'high' ? '<span class="lasa-flag">⚠️ Haut Risque</span>' : ''}
+                        ${m.risk === 'lasa' ? '<span style="color:#f59e0b;font-weight:700;font-size:12px;white-space:nowrap;margin-left:4px">🔄 LASA — double vérification</span>' : ''}
                     </div>`).join('')}
             </div>
             ${o.notes ? `<div class="small muted" style="margin-top:8px">📝 Notes méd.: ${o.notes}</div>` : ''}
