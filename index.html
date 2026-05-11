@@ -1381,125 +1381,97 @@ function useFallbackResult(name) {
 // ── openCameraSearch ──────────────────────────────────────────
 async function openCameraSearch() {
     // Précharger Tesseract + MobileNet en arrière-plan
-    loadTesseract().catch(() => {});
-    if (!mlService.isModelAvailable()) mlService.loadModel().catch(() => {});
+    loadTesseract().catch(function() {});
+    if (!mlService.isModelAvailable()) mlService.loadModel().catch(function() {});
 
-    // Détecter si caméra sera disponible
-    const isFileProtocol  = location.protocol === 'file:';
-    const cameraAvailable = !isFileProtocol && !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
-    const cameraWarning   = isFileProtocol
-        ? `<div style="background:#fffbeb;border:1px solid #f59e0b;border-radius:8px;padding:10px;margin-bottom:10px">
-            <strong style="color:#92400e">⚠ Mode fichier local — caméra désactivée</strong><br>
-            <span class="small" style="color:#78350f">Utilisez <strong>📂 Importer photo</strong> pour analyser une image.</span>
-           </div>`
-        : '';
+    var html = '<div style="max-width:520px">'
+        + '<h3 style="margin:0 0 10px">📷 Reconnaissance Image Médicament</h3>'
+        + '<div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap">'
+        + '<span class="small" style="padding:3px 10px;background:#eef5ff;border-radius:20px;color:#0B3D91">🔍 OCR texte</span>'
+        + '<span class="small" style="padding:3px 10px;background:#f0fff4;border-radius:20px;color:#0a6a2a">🤖 IA visuelle</span>'
+        + '<span class="small" style="padding:3px 10px;background:#fffbeb;border-radius:20px;color:#92400e">✏️ Saisie manuelle</span>'
+        + '</div>'
+        + '<div id="cameraViewport" style="position:relative;background:#1a1a1a;border-radius:10px;overflow:hidden;min-height:220px;display:flex;align-items:center;justify-content:center;margin-bottom:10px">'
+        + '<video id="cameraVideo" autoplay playsinline muted style="width:100%;max-height:300px;display:none;border-radius:10px"></video>'
+        + '<canvas id="cameraCanvas" style="width:100%;max-height:300px;display:none;border-radius:10px"></canvas>'
+        + '<div id="cameraPlaceholder" style="color:#aaa;text-align:center;padding:30px">'
+        + '<div style="font-size:52px;margin-bottom:10px">📷</div>'
+        + '<div style="font-size:14px">Activez la caméra ou importez une photo</div>'
+        + '<div class="small muted" style="margin-top:6px">Cadrez l&apos;&eacute;tiquette avec le nom bien visible</div>'
+        + '</div></div>'
+        + '<div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">'
+        + '<button class="btn" style="flex:1" onclick="startCamera()">📷 Activer caméra</button>'
+        + '<button class="ghost" id="captureBtn" onclick="captureImage()" style="flex:1;display:none">📸 Capturer</button>'
+        + '<button class="ghost" id="retakeBtn" onclick="retakePhoto()" style="flex:1;display:none">🔄 Reprendre</button>'
+        + '<label class="btn" style="flex:1;cursor:pointer;text-align:center;margin:0;padding:8px 14px;background:#0a6a2a">📂 Importer photo'
+        + '<input type="file" accept="image/*" onchange="handleFileUpload(event)" style="display:none">'
+        + '</label></div>'
+        + '<div id="analyzeControls" style="display:none;margin-bottom:10px">'
+        + '<button class="btn" style="width:100%;font-size:15px" onclick="searchWithPhoto()">🔬 Analyser (OCR + IA)</button>'
+        + '</div>'
+        + '<div id="cameraStatus" style="min-height:44px" role="status" aria-live="polite">'
+        + '<div class="small muted" style="text-align:center;padding:10px">💡 Astuce : l&apos;OCR lit directement "Doliprane", "Morphine", etc. sur la boîte.</div>'
+        + '</div>'
+        + '<div style="margin-top:10px;text-align:right"><button class="ghost" onclick="closeCamera()">Fermer</button></div>'
+        + '</div>';
 
-    showOverlay(`
-        <div style="max-width:520px">
-            <h3 style="margin:0 0 10px">📷 Reconnaissance Image Médicament</h3>
-            <div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap">
-                <span class="small" style="padding:3px 10px;background:#eef5ff;border-radius:20px;color:#0B3D91">🔍 OCR texte</span>
-                <span class="small" style="padding:3px 10px;background:#f0fff4;border-radius:20px;color:#0a6a2a">🤖 IA visuelle</span>
-                <span class="small" style="padding:3px 10px;background:#fffbeb;border-radius:20px;color:#92400e">✏️ Saisie manuelle</span>
-            </div>
+    showOverlay(html);
 
-            ${cameraWarning}
-
-            <div style="position:relative;background:#1a1a1a;border-radius:10px;overflow:hidden;
-                        min-height:${isFileProtocol ? '80' : '220'}px;display:flex;align-items:center;justify-content:center;margin-bottom:10px;
-                        ${isFileProtocol ? 'display:none' : ''}">
-                <video id="cameraVideo" autoplay playsinline muted
-                    style="width:100%;max-height:300px;display:none;border-radius:10px"></video>
-                <canvas id="cameraCanvas"
-                    style="width:100%;max-height:300px;display:none;border-radius:10px"></canvas>
-                <div id="cameraPlaceholder" style="color:#aaa;text-align:center;padding:30px">
-                    <div style="font-size:52px;margin-bottom:10px">📷</div>
-                    <div style="font-size:14px">Activez la caméra ou importez une photo</div>
-                    <div class="small muted" style="margin-top:6px">Cadrez l'étiquette avec le nom bien visible</div>
-                </div>
-            </div>
-            ${isFileProtocol ? '<canvas id="cameraCanvas" style="display:none"></canvas>' : ''}
-
-            <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
-                <button class="btn" style="flex:1" onclick="startCamera()">📷 Activer caméra</button>
-                <button class="ghost" id="captureBtn" onclick="captureImage()" style="flex:1;display:none">📸 Capturer</button>
-                <button class="ghost" id="retakeBtn"  onclick="retakePhoto()"  style="flex:1;display:none">🔄 Reprendre</button>
-                <label class="btn" style="flex:1;cursor:pointer;text-align:center;margin:0;padding:8px 14px;background:#0a6a2a">
-                    📂 Importer photo
-                    <input type="file" accept="image/*" onchange="handleFileUpload(event)" style="display:none">
-                </label>
-            </div>
-
-            <div id="analyzeControls" style="display:none;margin-bottom:10px">
-                <button class="btn" style="width:100%;font-size:15px" onclick="searchWithPhoto()">
-                    🔬 Analyser (OCR + IA)
-                </button>
-            </div>
-
-            <div id="cameraStatus" style="min-height:44px" role="status" aria-live="polite">
-                <div class="small muted" style="text-align:center;padding:10px" id="cameraInitHint">
-                    💡 Astuce : la reconnaissance texte (OCR) lit directement "Doliprane", "Morphine", etc.
-                </div>
-            </div>
-
-            <div style="margin-top:10px;text-align:right">
-                <button class="ghost" onclick="closeCamera()">Fermer</button>
-            </div>
-        </div>`);
+    // Détecter le protocole APRÈS le rendu de l'overlay
+    if (location.protocol === 'file:') {
+        setTimeout(function() {
+            var statusEl = document.getElementById('cameraStatus');
+            if (statusEl) statusEl.innerHTML = '<div style="background:#fffbeb;border:1px solid #f59e0b;border-radius:8px;padding:12px">'
+                + '<div style="font-weight:700;color:#92400e;margin-bottom:8px">⚠️ Mode fichier local — caméra désactivée</div>'
+                + '<div class="small" style="color:#78350f;margin-bottom:10px">Le navigateur bloque la caméra sur les URL <code>file://</code>.</div>'
+                + '<div class="small" style="font-weight:600;margin-bottom:6px">Utilisez :</div>'
+                + '<ul class="small" style="margin:0 0 10px;padding-left:18px;color:#78350f">'
+                + '<li>📂 <strong>Importer photo</strong> (bouton vert) pour analyser une image</li>'
+                + '<li>Ou serveur local : <code>http://localhost/medsafe/</code></li>'
+                + '</ul></div>';
+        }, 100);
+    }
 }
 
 async function startCamera() {
-    const video       = document.getElementById('cameraVideo');
-    const placeholder = document.getElementById('cameraPlaceholder');
-    const captureBtn  = document.getElementById('captureBtn');
-    const statusEl    = document.getElementById('cameraStatus');
-    if (!video) return;
+    var video      = document.getElementById('cameraVideo');
+    var placeholder= document.getElementById('cameraPlaceholder');
+    var captureBtn = document.getElementById('captureBtn');
+    var statusEl   = document.getElementById('cameraStatus');
 
-    // Vérifier si on est sur file:// (caméra bloquée par le navigateur)
+    if (!video || !statusEl) { setTimeout(startCamera, 150); return; }
+
+    // file:// protocol — camera blocked by browser
     if (location.protocol === 'file:') {
-        if (statusEl) statusEl.innerHTML = `
-            <div style="background:#fffbeb;border:1px solid #f59e0b;border-radius:8px;padding:12px">
-                <div style="font-weight:700;color:#92400e;margin-bottom:8px">⚠️ Caméra non disponible en mode fichier local</div>
-                <div class="small" style="color:#78350f;margin-bottom:10px">
-                    Le navigateur bloque l'accès à la caméra sur les URL <code>file://</code> pour des raisons de sécurité.
-                </div>
-                <div style="font-weight:600;font-size:13px;margin-bottom:6px">Solutions :</div>
-                <div style="display:flex;flex-direction:column;gap:6px">
-                    <div style="background:#fff;border:1px solid #e6e9ef;border-radius:8px;padding:10px">
-                        <div style="font-weight:600;font-size:13px">✅ Option 1 — Importer une photo (recommandé)</div>
-                        <div class="small muted" style="margin-top:3px">Cliquez "Importer photo" ci-dessus pour analyser une image depuis votre appareil</div>
-                    </div>
-                    <div style="background:#fff;border:1px solid #e6e9ef;border-radius:8px;padding:10px">
-                        <div style="font-weight:600;font-size:13px">🌐 Option 2 — Ouvrir via un serveur local</div>
-                        <div class="small muted" style="margin-top:3px">
-                            WAMP : <code>http://localhost/medsafe/</code><br>
-                            Python : <code>python -m http.server 8080</code> → <code>http://localhost:8080</code>
-                        </div>
-                    </div>
-                    <div style="background:#fff;border:1px solid #e6e9ef;border-radius:8px;padding:10px">
-                        <div style="font-weight:600;font-size:13px">🔧 Option 3 — Chrome avec flag (développement)</div>
-                        <div class="small muted" style="margin-top:3px">
-                            Lancer Chrome avec : <code style="font-size:11px">--allow-file-access-from-files --use-fake-ui-for-media-stream</code>
-                        </div>
-                    </div>
-                </div>
-            </div>`;
+        statusEl.innerHTML =
+            '<div style="background:#fffbeb;border:1px solid #f59e0b;border-radius:8px;padding:12px">' +
+            '<div style="font-weight:700;color:#92400e;margin-bottom:8px">&#x26A0;&#xFE0F; Mode fichier local &mdash; cam&eacute;ra d&eacute;sactiv&eacute;e</div>' +
+            '<div style="color:#78350f;font-size:13px;margin-bottom:10px">Le navigateur bloque la cam&eacute;ra sur les URL <code>file://</code>.</div>' +
+            '<div style="display:flex;flex-direction:column;gap:6px">' +
+            '<div style="background:#fff;border:1px solid #e6e9ef;border-radius:8px;padding:10px">' +
+            '<div style="font-weight:600;font-size:13px">&#x2705; Option 1 &mdash; Importer une photo</div>' +
+            '<div style="font-size:12px;color:#666;margin-top:3px">Cliquez sur le bouton vert <strong>Importer photo</strong> ci-dessus.</div>' +
+            '</div>' +
+            '<div style="background:#fff;border:1px solid #e6e9ef;border-radius:8px;padding:10px">' +
+            '<div style="font-weight:600;font-size:13px">&#x1F310; Option 2 &mdash; Serveur local</div>' +
+            '<div style="font-size:12px;color:#666;margin-top:3px">WAMP : <code>http://localhost/medsafe/</code><br>Python : <code>python -m http.server 8080</code></div>' +
+            '</div>' +
+            '</div>' +
+            '</div>';
         return;
     }
 
-    // Vérifier si getUserMedia est disponible
+    // getUserMedia not supported
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        if (statusEl) statusEl.innerHTML = `
-            <div class="lasawarning">
-                <strong>⚠ Caméra non supportée</strong><br>
-                Votre navigateur ne supporte pas l'accès caméra.<br>
-                Utilisez <strong>Importer photo</strong> à la place.
-            </div>`;
+        statusEl.innerHTML =
+            '<div class="lasawarning">' +
+            '<strong>&#x26A0; Cam&eacute;ra non support&eacute;e</strong><br>' +
+            'Utilisez le bouton <strong>Importer photo</strong> &agrave; la place.' +
+            '</div>';
         return;
     }
 
     try {
-        // Essayer d'abord la caméra arrière (mobile), puis n'importe laquelle
         try {
             cameraStream = await navigator.mediaDevices.getUserMedia({
                 video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
@@ -1507,48 +1479,44 @@ async function startCamera() {
         } catch(e) {
             cameraStream = await navigator.mediaDevices.getUserMedia({ video: true });
         }
-
         video.srcObject = cameraStream;
         video.style.display = 'block';
         if (placeholder) placeholder.style.display = 'none';
         if (captureBtn)  captureBtn.style.display  = 'block';
-        if (statusEl) statusEl.innerHTML = '<div class="small muted" style="text-align:center;padding:8px">📷 Caméra active — cadrez bien l\'étiquette du médicament, puis capturez.</div>';
+        statusEl.innerHTML =
+            '<div class="small muted" style="text-align:center;padding:8px">' +
+            '&#x1F4F7; Cam&eacute;ra active &mdash; cadrez bien l&apos;&eacute;tiquette, puis capturez.' +
+            '</div>';
 
     } catch(e) {
         console.warn('[startCamera]', e.name, e.message);
-
-        let msg = '';
+        var msg = '';
         if (e.name === 'NotAllowedError' || e.name === 'PermissionDeniedError') {
-            msg = `
-                <div style="font-weight:700;margin-bottom:6px">🔒 Permission caméra refusée</div>
-                <div class="small" style="margin-bottom:10px">Pour autoriser :</div>
-                <ul class="small" style="margin:0 0 10px;padding-left:18px">
-                    <li>Cliquez sur l'icône 🔒 ou 📷 dans la barre d'adresse</li>
-                    <li>Autorisez l'accès à la caméra pour ce site</li>
-                    <li>Rechargez la page et réessayez</li>
-                </ul>
-                <div style="font-weight:600;font-size:13px">Ou utilisez directement :</div>`;
-        } else if (e.name === 'NotFoundError' || e.name === 'DevicesNotFoundError') {
-            msg = `<div style="font-weight:700;margin-bottom:6px">📷 Aucune caméra détectée</div>
-                   <div class="small" style="margin-bottom:10px">Aucun appareil photo trouvé sur cet appareil.</div>`;
+            msg = '<strong>&#x1F512; Permission cam&eacute;ra refus&eacute;e</strong>' +
+                  '<ul style="margin:8px 0;padding-left:18px;font-size:13px">' +
+                  '<li>Cliquez sur l&apos;ic&ocirc;ne &#x1F512; dans la barre d&apos;adresse</li>' +
+                  '<li>Autorisez l&apos;acc&egrave;s &agrave; la cam&eacute;ra</li>' +
+                  '<li>Rechargez la page et r&eacute;essayez</li>' +
+                  '</ul>';
+        } else if (e.name === 'NotFoundError') {
+            msg = '<strong>&#x1F4F7; Aucune cam&eacute;ra d&eacute;tect&eacute;e</strong><br>' +
+                  '<span style="font-size:13px">Utilisez le bouton Importer photo.</span>';
         } else if (e.name === 'NotReadableError') {
-            msg = `<div style="font-weight:700;margin-bottom:6px">⚠ Caméra occupée</div>
-                   <div class="small" style="margin-bottom:10px">La caméra est déjà utilisée par une autre application.</div>`;
+            msg = '<strong>&#x26A0; Cam&eacute;ra occup&eacute;e</strong><br>' +
+                  '<span style="font-size:13px">Fermez les autres applications utilisant la cam&eacute;ra.</span>';
         } else {
-            msg = `<div style="font-weight:700;margin-bottom:6px">⚠ Caméra non disponible</div>
-                   <div class="small" style="margin-bottom:10px">${e.message}</div>`;
+            msg = '<strong>&#x26A0; Cam&eacute;ra non disponible</strong><br>' +
+                  '<span style="font-size:13px">' + e.message + '</span>';
         }
-
-        if (statusEl) statusEl.innerHTML = `
-            <div style="background:#fff5f5;border:1px solid #fed7d7;border-radius:8px;padding:12px">
-                ${msg}
-                <div style="margin-top:10px;padding:10px;background:#fff;border:1px solid #e6e9ef;border-radius:8px">
-                    <div style="font-weight:600;font-size:13px;margin-bottom:4px">✅ Alternative : Importer une photo</div>
-                    <div class="small muted">Utilisez le bouton "📂 Importer photo" pour analyser une image depuis votre galerie ou dossier.</div>
-                </div>
-            </div>`;
+        statusEl.innerHTML =
+            '<div style="background:#fff5f5;border:1px solid #fed7d7;border-radius:8px;padding:12px">' +
+            msg +
+            '<div style="margin-top:10px;padding:8px;background:#fff;border:1px solid #e6e9ef;border-radius:8px;font-size:13px">' +
+            '&#x2705; <strong>Alternative :</strong> Utilisez le bouton vert <strong>Importer photo</strong>.' +
+            '</div></div>';
     }
 }
+
 
 function captureImage() {
     const video   = document.getElementById('cameraVideo');
@@ -2648,148 +2616,6 @@ function registerServiceWorker() {
 // RECHERCHE PAR CAMÉRA - FONCTIONS EXISTANTES (avec quelques ajustements)
 // =========================
 
-function startCamera() {
-    const video = document.getElementById('cameraVideo');
-    const status = document.getElementById('cameraStatus');
-    
-    status.innerHTML = 'Accès à la caméra...';
-    
-    // Options de caméra plus simples et compatibles
-    const constraints = {
-        video: {
-            facingMode: 'environment', // Caméra arrière par défaut
-            width: { ideal: 1280 },
-            height: { ideal: 720 }
-        }
-    };
-    
-    // Demander l'accès à la caméra
-    navigator.mediaDevices.getUserMedia(constraints)
-    .then(stream => {
-        cameraStream = stream;
-        video.srcObject = stream;
-        status.innerHTML = 'Caméra activée - Pointez vers le médicament';
-        
-        // Afficher les bons boutons
-        document.getElementById('startCameraBtn').style.display = 'none';
-        document.getElementById('captureBtn').style.display = 'block';
-    })
-    .catch(error => {
-        console.error('Erreur caméra:', error);
-        
-        // Essayer avec des contraintes plus simples si la première tentative échoue
-        if (error.name === 'OverconstrainedError' || error.name === 'ConstraintNotSatisfiedError') {
-            status.innerHTML = 'Tentative avec des paramètres de caméra plus simples...';
-            
-            // Deuxième tentative avec des contraintes minimales
-            navigator.mediaDevices.getUserMedia({ video: true })
-            .then(stream => {
-                cameraStream = stream;
-                video.srcObject = stream;
-                status.innerHTML = 'Caméra activée (mode simple) - Pointez vers le médicament';
-                
-                document.getElementById('startCameraBtn').style.display = 'none';
-                document.getElementById('captureBtn').style.display = 'block';
-            })
-            .catch(error2 => {
-                console.error('Erreur caméra (2e tentative):', error2);
-                status.innerHTML = `
-                    <div class="lasawarning">
-                        Impossible d'accéder à la caméra: ${error2.message || 'Permission refusée ou caméra non disponible'}
-                    </div>
-                    <div class="small" style="margin-top: 10px;">
-                        <strong>Solutions possibles:</strong>
-                        <ul style="text-align: left; margin-top: 5px;">
-                            <li>Vérifiez que vous avez autorisé l'accès à la caméra</li>
-                            <li>Assurez-vous d'utiliser HTTPS (obligatoire sur mobile)</li>
-                            <li>Utilisez l'option "Télécharger une image" ci-dessous</li>
-                        </ul>
-                    </div>
-                `;
-            });
-        } else {
-            status.innerHTML = `
-                <div class="lasawarning">
-                    Impossible d'accéder à la caméra: ${error.message || 'Permission refusée ou caméra non disponible'}
-                </div>
-                <div class="small" style="margin-top: 10px;">
-                    <strong>Solutions possibles:</strong>
-                    <ul style="text-align: left; margin-top: 5px;">
-                        <li>Vérifiez que vous avez autorisé l'accès à la caméra</li>
-                        <li>Assurez-vous d'utiliser HTTPS (obligatoire sur mobile)</li>
-                        <li>Utilisez l'option "Télécharger une image" ci-dessous</li>
-                    </ul>
-                </div>
-            `;
-        }
-    });
-}
-
-function capturePhoto() {
-    const video = document.getElementById('cameraVideo');
-    const canvas = document.getElementById('cameraCanvas');
-    const preview = document.getElementById('cameraPreview');
-    const previewImage = document.getElementById('previewImage');
-    const status = document.getElementById('cameraStatus');
-    
-    // Vérifier que la vidéo est prête
-    if (video.videoWidth === 0 || video.videoHeight === 0) {
-        status.innerHTML = '<div class="lasawarning">La caméra n\'est pas encore prête. Attendez quelques secondes.</div>';
-        return;
-    }
-    
-    // Configurer le canvas avec les dimensions de la vidéo
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    
-    // Dessiner l'image de la vidéo sur le canvas
-    const context = canvas.getContext('2d');
-    context.drawImage(video, 0, 0, canvas.width, canvas.height);
-    
-    // Convertir en URL de données pour l'aperçu
-    const imageDataURL = canvas.toDataURL('image/jpeg');
-    previewImage.src = imageDataURL;
-    
-    // Afficher l'aperçu
-    preview.style.display = 'block';
-    
-    // Changer les boutons
-    document.getElementById('captureBtn').style.display = 'none';
-    document.getElementById('retakeBtn').style.display = 'block';
-    document.getElementById('searchPhotoBtn').style.display = 'block';
-    
-    status.innerHTML = 'Photo capturée - Cliquez sur "Analyser avec IA"';
-    
-    // Arrêter la caméra pour économiser la batterie
-    if (cameraStream) {
-        cameraStream.getTracks().forEach(track => track.stop());
-        cameraStream = null;
-    }
-}
-
-function retakePhoto() {
-    const preview = document.getElementById('cameraPreview');
-    preview.style.display = 'none';
-    
-    // Réafficher les boutons de capture
-    document.getElementById('captureBtn').style.display = 'block';
-    document.getElementById('retakeBtn').style.display = 'none';
-    document.getElementById('searchPhotoBtn').style.display = 'none';
-    
-    document.getElementById('cameraStatus').innerHTML = 'Reprenez une photo';
-    
-    // Redémarrer la caméra
-    startCamera();
-}
-
-function closeCamera() {
-    // Arrêter la caméra si elle est active
-    if (cameraStream) {
-        cameraStream.getTracks().forEach(track => track.stop());
-        cameraStream = null;
-    }
-    closeOverlay();
-}
 
 // Initialisation de l'application
 function initApp() {
